@@ -113,6 +113,28 @@ option(RP2040_CONSOLE_CLOCK_PROMPT
         "Ask for the date and time at startup (Enter accepts the default)" ON)
 
 #
+# How long to wait for someone to open the serial port before printing anything,
+# and whether an open port requires the host to assert DTR. Both exist because
+# stdio_usb discards output, and does not read input, while it believes no
+# terminal is attached; see console_wait_for_terminal().
+#
+set(RP2040_CONSOLE_CONNECT_WAIT_MS "0" CACHE STRING
+        [==[Milliseconds to wait for a terminal to open the port before
+        starting; 0 (the default) waits until one does]==])
+
+option(RP2040_CONSOLE_DTR_GATE
+        "Only do console I/O while the host asserts DTR (off: always allowed)" OFF)
+
+#
+# The onboard LED, which reports how far the boot got on a board that prints
+# nothing. There is no way to find the LED at run time, so it is a build choice:
+# GP25 on a Raspberry Pi Pico, GP24 on a Waveshare RP2040-Zero, GP22 on a
+# Pimoroni Pico Plus 2. See src/diag.c.
+#
+set(RP2040_CONSOLE_LED "25" CACHE STRING
+        [==[GPIO(s) of the onboard LED, comma separated; empty disables it]==])
+
+#
 # Defaults for the values a game may override per target. The flash layout
 # is here rather than buried in the driver because it has to be agreed
 # between two things that never talk to each other: the program, which reads
@@ -266,6 +288,7 @@ function(rp2040_console_game)
             "${RP2040_CONSOLE_SRC}/termcap_shim.c"
             "${RP2040_CONSOLE_SRC}/termios_emul.c"
             "${RP2040_CONSOLE_SRC}/console.c"
+            "${RP2040_CONSOLE_SRC}/diag.c"
             "${FATFS_DIR}/ff.c"
             "${FATFS_DIR}/ffunicode.c"
             "${FATFS_DIR}/ffsystem.c"
@@ -325,7 +348,26 @@ function(rp2040_console_game)
             # plausible name rather than the empty string the runtime would
             # otherwise leave behind.
             RP2040_CONSOLE_ARGV0="${CG_ARGV0}"
+            RP2040_CONSOLE_LED="${RP2040_CONSOLE_LED}"
+            RP2040_CONSOLE_CONNECT_WAIT_MS=${RP2040_CONSOLE_CONNECT_WAIT_MS}
             )
+
+    #
+    # Whether the console requires the host to assert DTR.
+    #
+    # With the gate in place, stdio_usb drops output and ignores input
+    # whenever it believes no terminal has the port open - and a terminal
+    # opened a moment late then finds a board that prints nothing and answers
+    # nothing. With the gate off, I/O happens whether or not DTR is up.
+    #
+    # This reaches stdio_usb.c because the SDK's pico_stdio_usb is an INTERFACE
+    # target that hands its sources to whatever links it, so they are compiled
+    # here, with the definitions given here.
+    #
+    if(NOT RP2040_CONSOLE_DTR_GATE)
+        target_compile_definitions(${CG_NAME} PRIVATE
+                PICO_STDIO_USB_CONNECTION_WITHOUT_DTR=1)
+    endif()
 
     #
     # Anything else a program wants defined. The list should be short: a define

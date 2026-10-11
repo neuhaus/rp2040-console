@@ -33,7 +33,14 @@ int console_read(void *buf, size_t count);
  */
 struct termios *console_termios(void);
 
-/* Print the memory map over the console. */
-void report_memory(void);
+/*
+ * Give a host this long, in milliseconds, to have the serial port open before
+ * anything is printed. See console.c; a terminal opened after the boot would
+ * otherwise see neither what was already printed nor what it types.
+ */
+void console_wait_for_terminal(int ms);
+
+/* Bring up UART0 as a second keyboard. Only built when asked for. */
+void console_uart_stdin_init(void);
 
 #endif /* RP2040_CONSOLE_CONSOLE_H */

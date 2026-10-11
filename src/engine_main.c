@@ -22,7 +22,12 @@
 #include <pico/stdio.h>
 #include <pico/stdio_usb.h>
 
+#ifndef RP2040_CONSOLE_CONNECT_WAIT_MS
+#define RP2040_CONSOLE_CONNECT_WAIT_MS 0
+#endif
+
 #include "console.h"
+#include "diag.h"
 #include "env.h"
 #include "storage.h"
 #include "probes.h"
@@ -61,6 +66,12 @@ static void engine_start(void)
     restart_note_boot();
 
     /*
+     * The LED starts reporting the stage reached before anything else can go
+     * wrong, and keeps reporting it from an alarm interrupt afterwards.
+     */
+    console_diag_init();
+
+    /*
      * First statement that prints: bring up UART0, so the progress markers are
      * visible even if USB never enumerates.
      */
@@ -77,6 +88,14 @@ static void engine_start(void)
      * stdio_init_all() also sets up UART0, leaving a wired console.
      */
     stdio_init_all();
+    console_diag_stage(DIAG_STAGE_CONSOLE);
+
+    /*
+     * Nothing has been printed yet, and that is deliberate: give a terminal a
+     * chance to open first, or the startup and the first prompt go out into the
+     * absence and the board looks dead. See console_wait_for_terminal().
+     */
+    console_wait_for_terminal(RP2040_CONSOLE_CONNECT_WAIT_MS);
 
     /*
      * Unbuffered, deliberately, and it has to happen before anything prints.
@@ -99,9 +118,11 @@ static void engine_start(void)
     probe(3);
 
     env_init();
+    console_diag_stage(DIAG_STAGE_ENV);
     probe(4);
 
     console_clock_init();
+    console_diag_stage(DIAG_STAGE_CLOCK);
     probe(5);
 
     storage_mount();
@@ -125,7 +146,7 @@ extern int rp2040_console_game_main(int argc, char **argv);
  */
 int main(int argc, char **argv)
 {
-    static char *const console_argv[] = { RP2040_CONSOLE_ARGV0, NULL };
+    static char *console_argv[] = { RP2040_CONSOLE_ARGV0, NULL };
 
     (void)argc;
     (void)argv;

@@ -19,6 +19,7 @@
 
 #include "ff.h"
 #include "diskio.h"
+#include "diag.h"
 #include "sd_card.h"
 #include "flash_fs.h"
 #include "storage.h"
@@ -181,6 +182,8 @@ static bool flash_mount(void)
 
 bool storage_mount(void)
 {
+    console_diag_stage(DIAG_STAGE_STORAGE);
+
     /*
      * Onboard flash first. It always exists, needs no card and no
      * wiring, and it is what makes the game's lock files, data files

@@ -24,6 +24,7 @@
 #include <termios.h>
 
 #include <pico/stdio.h>
+#include <pico/time.h>
 
 #include "console.h"
 
@@ -175,20 +176,15 @@ int console_read(void *buf, size_t count)
 }
 
 /*
- * Emit count bytes exactly as they came.
- *
- * No newline appended, no CR inserted, nothing interpreted. Output processing
- * is deliberately not applied to the newline: the terminal on the other end of
- * this link treats a bare LF as the end of a line, the SDK's own putchar path
- * has always sent it that way, and adding CR here would put two line endings on
- * everything that goes through printf().
+ * Emit count bytes, translated exactly as putchar() would translate them -
+ * one call, not one per byte, so a screen update costs one USB transaction
+ * rather than a few thousand.
  */
 void console_write(const void *buf, size_t count)
 {
-    const unsigned char *p = buf;
-
-    for (size_t i = 0; i < count; i++)
-        putchar((int)p[i]);
+    /* One call, not one per byte: same bytes as putchar would send. */
+    if (count > 0)
+        stdio_put_string((const char *)buf, (int)count, false, true);
 }
 
 /*
@@ -251,27 +247,41 @@ void __wrap_setbuf(FILE *stream, char *buf)
 }
 
 /*
- * Print the memory map over the console.
+ * Wait for a host with the port open, before the first thing printed.
  *
- * Useful for confirming a program still fits after a change. The numbers worth
- * watching are the RAM ones: text and constant tables live in flash and cost
- * nothing there, so a program that grows 40KB and still runs has not
- * necessarily got any nearer to the limit.
+ * A terminal opened a second after power-on would otherwise miss the
+ * questions asked at startup and time out answering what it never saw -
+ * looking exactly like a board that does not ask. Zero waits until someone
+ * is listening; a game meant to run unattended sets a timeout instead.
+ *
+ * This watches DTR itself rather than stdio_usb_connected(): output here
+ * does not need DTR, but without it there is nobody to read it. DTR is what
+ * a terminal opening the port asserts. tud_cdc_connected() is a macro, so
+ * only the header reaches it.
  */
-void report_memory(void)
+#if LIB_PICO_STDIO_USB
+#include "tusb.h"
+#endif
+
+void console_wait_for_terminal(int ms)
 {
-    extern char __etext, __data_start__, __bss_start__, __bss_end__;
-    extern char __StackTop;
+#if LIB_PICO_STDIO_USB
+    /* Zero waits until someone is listening; see above. */
+    absolute_time_t limit = ms > 0 ? make_timeout_time_ms((uint32_t)ms)
+                                   : at_the_end_of_time;
 
-    unsigned flash_used = (unsigned)(&__etext - &__data_start__);
-    unsigned ram_static = (unsigned)(&__bss_end__ - &__data_start__);
-    unsigned free_ram = (unsigned)((char *)&__StackTop - &__bss_end__);
+    while (!tud_cdc_connected() && !time_reached(limit))
+        sleep_ms(10);
 
-    printf("\n=== memory ===\n");
-    printf("flash text : %u (%uKB)\n", flash_used, flash_used / 1024);
-    printf("RAM static : %u (%uKB)\n", ram_static, ram_static / 1024);
-    printf("RAM free   : %u (%uKB)\n", free_ram, free_ram / 1024);
-    printf("============\n");
+    /*
+     * A prompt written the instant DTR rises can be swallowed by the terminal
+     * installing its line settings; the SDK waits after connecting too.
+     */
+    if (tud_cdc_connected())
+        sleep_ms(50);
+#else
+    (void) ms;
+#endif
 }
 
 /*
@@ -289,6 +299,7 @@ void report_memory(void)
  * Input only. Output stays on USB alone, so nothing is printed twice.
  */
 #ifdef RP2040_CONSOLE_UART_STDIN
+
 
 #include <hardware/gpio.h>
 #include <hardware/uart.h>
