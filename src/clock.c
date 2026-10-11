@@ -235,11 +235,11 @@ static size_t read_line(char *buf, size_t cap)
 
 /*
  * "YYYY-MM-DD", "YYYY-MM-DD HH:MM" and "YYYY-MM-DD HH:MM:SS", with '/'
- * accepted instead of '-'. Anything else is refused rather than guessed
- * at: a date that is quietly wrong is worse than one the player has to
- * repeat.
+ * accepted instead of '-'. A bare "HH:MM" means today, for when the date is
+ * already right. Anything else is refused rather than guessed at: a date
+ * that is quietly wrong is worse than one the player has to repeat.
  */
-static bool parse_datetime(const char *s, time_t *out)
+static bool parse_datetime(const char *s, time_t deflt, time_t *out)
 {
     int y = 0, mo = 0, d = 0, hh = 0, mm = 0, ss = 0;
 
@@ -253,18 +253,33 @@ static bool parse_datetime(const char *s, time_t *out)
         y = mo = d = hh = mm = ss = 0;
         fields = sscanf(s, "%d/%d/%d %d:%d:%d", &y, &mo, &d, &hh, &mm, &ss);
     }
-    if (fields < 3)
-        return false;
+    if (fields >= 3) {
+        /* 2107 is where FAT directory years stop; later cannot be recorded. */
+        if (y < 1970 || y > 2107)
+            return false;
+        if (mo < 1 || mo > 12 || d < 1 || d > 31)
+            return false;
+    } else {
+        /*
+         * No date in it: take the time and keep the default's day. A number
+         * that is not followed by a colon is not a time - "12" alone is
+         * refused, not read as midnight.
+         */
+        struct tm *tm;
+        int nfields;
 
-    /*
-     * 2107 rather than a rounder number: FAT directory years stop there, so
-     * a later date cannot be recorded for the file it would date. Refusing
-     * it is kinder than granting what cannot be kept.
-     */
-    if (y < 1970 || y > 2107)
-        return false;
-    if (mo < 1 || mo > 12 || d < 1 || d > 31)
-        return false;
+        y = mo = d = hh = mm = ss = 0;
+        nfields = sscanf(s, "%d:%d:%d", &hh, &mm, &ss);
+        if (nfields < 2 || strchr(s, ':') == NULL)
+            return false;
+
+        tm = gmtime(&deflt);
+        if (tm == NULL)
+            return false;
+        y = tm->tm_year + 1900;
+        mo = tm->tm_mon + 1;
+        d = tm->tm_mday;
+    }
     if (hh > 23 || mm > 59 || ss > 59)
         return false;
 
@@ -296,7 +311,8 @@ void console_clock_init(void)
     clock_base = deflt;
     (void)line;
 #else
-    printf("\nSet date and time [YYYY-MM-DD HH:MM], or Enter for %s: ",
+    printf("\nSet date and time [YYYY-MM-DD HH:MM], time alone for today, "
+           "or Enter for %s: ",
            display(deflt));
 
     for (int tries = 0; tries < 3; tries++) {
@@ -304,11 +320,11 @@ void console_clock_init(void)
             clock_base = deflt;
             break;
         }
-        if (parse_datetime(line, &clock_base))
+        if (parse_datetime(line, deflt, &clock_base))
             break;
 
         clock_base = 0;
-        printf("Not understood. Type YYYY-MM-DD HH:MM, "
+        printf("Not understood. Type YYYY-MM-DD HH:MM or HH:MM, "
                "or Enter for %s: ", display(deflt));
     }
 
