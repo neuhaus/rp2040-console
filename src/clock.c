@@ -332,8 +332,6 @@ void console_clock_init(void)
         /* Three attempts, or every line timed out. */
         clock_base = deflt;
     }
-
-    printf("Date set to %s\n", display(clock_base));
 #endif
 
     /*
