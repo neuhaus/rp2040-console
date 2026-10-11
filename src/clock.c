@@ -37,6 +37,8 @@
 #include <unistd.h>
 
 #include <pico/stdlib.h>
+#include <hardware/structs/watchdog.h>
+#include <hardware/watchdog.h>
 
 #include "clock.h"
 
@@ -190,6 +192,47 @@ void console_clock_persist(void)
 }
 
 /*
+ * The session time across a reboot, without a file.
+ *
+ * A watchdog reboot keeps power on, so the watchdog's scratch registers keep
+ * their values - the bootrom's double-tap bootsel and the SDK's own reboot
+ * marker rely on the same survival. Power loss clears them, which is exactly
+ * the distinction needed: a marker found here means this boot directly
+ * follows a session on this power cycle, so its time is exact and there is
+ * nothing to ask.
+ *
+ * Registers 0-2: scratch[4] belongs to the reboot path itself and scratch[5]
+ * to bootsel. The timestamp goes out first and the marker last, so a reset
+ * landing between the two leaves no marker behind. The marker is cleared on
+ * reading, so a later crash cannot reuse it; a power cut needs no clearing.
+ */
+#define clock_scratch_magic 0x434C4332U   /* "CLC2" */
+
+void console_clock_stash(void)
+{
+    uint64_t now = (uint64_t)console_clock_now();
+
+    watchdog_hw->scratch[1] = (uint32_t)now;
+    watchdog_hw->scratch[2] = (uint32_t)(now >> 32);
+    watchdog_hw->scratch[0] = clock_scratch_magic;
+}
+
+static time_t clock_unstash(void)
+{
+    uint32_t magic = watchdog_hw->scratch[0];
+    uint64_t v = (uint64_t)watchdog_hw->scratch[1] |
+                 ((uint64_t)watchdog_hw->scratch[2] << 32);
+
+    watchdog_hw->scratch[0] = 0;
+
+    if (!watchdog_caused_reboot() || magic != clock_scratch_magic)
+        return (time_t)0;
+    if (v < 315532800ULL || v > 4350748800ULL)   /* 1980..2107, as in recall */
+        return (time_t)0;
+    return (time_t)v;
+}
+
+/*
  * One line of input. Returns the length, or 0 for "nothing entered" -
  * which covers Enter on an empty line, ^C, and running out of patience
  * before the first character.
@@ -303,36 +346,46 @@ void console_clock_init(void)
     if (remembered > deflt)
         deflt = remembered;
 
-#ifdef RP2040_CONSOLE_CLOCK_NO_PROMPT
     /*
-     * Built without the prompt: a game meant to run unattended, or one that
-     * does not care about the date, takes the default with no delay.
+     * A stashed time skips the question: power never went away since it was
+     * stored, so it is exact, not a guess. Power-cycle the board to be asked
+     * again - a power cut clears the stash.
      */
-    clock_base = deflt;
-    (void)line;
-#else
-    printf("\nSet date and time [YYYY-MM-DD HH:MM], time alone for today, "
-           "or Enter for %s: ",
-           display(deflt));
-
-    for (int tries = 0; tries < 3; tries++) {
-        if (read_line(line, sizeof(line)) == 0) {
-            clock_base = deflt;
-            break;
-        }
-        if (parse_datetime(line, deflt, &clock_base))
-            break;
-
-        clock_base = 0;
-        printf("Not understood. Type YYYY-MM-DD HH:MM or HH:MM, "
-               "or Enter for %s: ", display(deflt));
-    }
-
-    if (clock_base == 0) {
-        /* Three attempts, or every line timed out. */
+    clock_base = clock_unstash();
+    if (clock_base != 0) {
+        printf("\nDate kept across reboot: %s\n", display(clock_base));
+    } else {
+#ifdef RP2040_CONSOLE_CLOCK_NO_PROMPT
+        /*
+         * Built without the prompt: a game meant to run unattended, or one
+         * that does not care about the date, takes the default with no delay.
+         */
         clock_base = deflt;
-    }
+        (void)line;
+#else
+        printf("\nSet date and time [YYYY-MM-DD HH:MM], time alone for today, "
+               "or Enter for %s: ",
+               display(deflt));
+
+        for (int tries = 0; tries < 3; tries++) {
+            if (read_line(line, sizeof(line)) == 0) {
+                clock_base = deflt;
+                break;
+            }
+            if (parse_datetime(line, deflt, &clock_base))
+                break;
+
+            clock_base = 0;
+            printf("Not understood. Type YYYY-MM-DD HH:MM or HH:MM, "
+                   "or Enter for %s: ", display(deflt));
+        }
+
+        if (clock_base == 0) {
+            /* Three attempts, or every line timed out. */
+            clock_base = deflt;
+        }
 #endif
+    }
 
     /*
      * Measured after the prompt, so the seconds spent typing are not also

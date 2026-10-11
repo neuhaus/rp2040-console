@@ -24,4 +24,12 @@ time_t console_clock_now(void);
  */
 void console_clock_persist(void);
 
+/*
+ * Hand the session time to the next boot through the watchdog scratch
+ * registers (see clock.c). Call immediately before watchdog_reboot and
+ * nowhere else: the marker means "this boot follows directly", which is
+ * only true there.
+ */
+void console_clock_stash(void);
+
 #endif /* RP2040_CONSOLE_CLOCK_H */

@@ -115,6 +115,7 @@ void _exit(int status)
      * when this one ended rather than the build date.
      */
     console_clock_persist();
+    console_clock_stash();
     watchdog_reboot(0, NULL, 0);
 
     /* Not reached: the watchdog fires within a millisecond. */
