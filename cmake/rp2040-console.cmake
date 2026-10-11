@@ -289,6 +289,7 @@ function(rp2040_console_game)
             "${RP2040_CONSOLE_SRC}/termios_emul.c"
             "${RP2040_CONSOLE_SRC}/console.c"
             "${RP2040_CONSOLE_SRC}/diag.c"
+            "${RP2040_CONSOLE_SRC}/mtime.c"
             "${FATFS_DIR}/ff.c"
             "${FATFS_DIR}/ffunicode.c"
             "${FATFS_DIR}/ffsystem.c"

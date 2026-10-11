@@ -19,4 +19,7 @@ bool storage_mount(void);
  */
 void storage_set_available(bool available);
 
+/* Whether storage_mount() succeeded; file calls fail safe without it. */
+bool storage_is_available(void);
+
 #endif /* RP2040_CONSOLE_STORAGE_H */

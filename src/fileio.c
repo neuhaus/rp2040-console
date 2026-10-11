@@ -16,7 +16,9 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <stdint.h>
 #include <string.h>
+#include <time.h>
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -25,7 +27,9 @@
 #include <pico/stdlib.h>
 
 #include "ff.h"
+#include "clock.h"
 #include "console.h"
+#include "mtime.h"
 #include "storage.h"
 #include "trace.h"
 
@@ -55,11 +59,62 @@ void storage_set_available(bool available)
     storage_available = available;
 }
 
+bool storage_is_available(void)
+{
+    return storage_available;
+}
+
 static struct {
     bool     used;
     FIL      fil;
     int      flags;
+    /* Directory time as of open(), for fstat(): a descriptor and a path to
+     * the same file must agree, which is what save freshness is compared on.
+     */
+    time_t   mtime;
+    /*
+     * Path as opened, so close() can record the session date for it (see
+     * mtime.h). Skipped when it does not fit, which fails safe to the
+     * directory time.
+     */
+    char     path[96];
+    bool     have_path;
 } open_files[MAX_OPEN_FILES];
+
+/*
+ * Time conversion is approximate: a packed FAT stamp is a local time with no
+ * timezone, so fold it to a monotonic-ish value rather than a real date. The
+ * game only compares two of these against each other, so every path must fold
+ * the same way - one shared function for directory stamps and session dates.
+ */
+static time_t fold_datetime(int year, int mon, int day,
+                            int hour, int min, int sec)
+{
+    /*
+     * 64-bit arithmetic throughout: the folded value is far past 2^31, and
+     * time_t is 64 bits, so 32-bit math would wrap first and misorder.
+     */
+    uint64_t t = (uint64_t)year * 31536000u +
+                 (uint64_t)mon * 2592000u +
+                 (uint64_t)day * 86400u +
+                 (uint64_t)hour * 3600u +
+                 (uint64_t)min * 60u + (uint64_t)sec;
+
+    return (time_t)t;
+}
+
+static time_t filinfo_mtime(const FILINFO *fi)
+{
+    uint32_t date = fi->fdate;
+    uint32_t time = fi->ftime;
+
+    return fold_datetime((int)((date >> 9) & 0x7FU) + 1980,
+                         (int)((date >> 5) & 0x0FU),
+                         (int)(date & 0x1FU),
+                         (int)((time >> 11) & 0x1FU),
+                         (int)((time >> 5) & 0x3FU),
+                         (int)(time & 0x1FU) * 2);
+}
 
 /* Fill in a struct stat from FatFs file information. */
 static void stat_from_filinfo(struct stat *st, const FILINFO *fi)
@@ -74,30 +129,19 @@ static void stat_from_filinfo(struct stat *st, const FILINFO *fi)
     st->st_size   = fi->fsize;
     st->st_blksize = 512;
     st->st_blocks = (fi->fsize + 511) / 512;
-
-    /*
-     * Time conversion is approximate. f_getftime gives a packed FAT
-     * timestamp, which is a local time with no timezone. Converting it
-     * to time_t needs a calendar, so fold it to a monotonic-ish value
-     * rather than pretending to be a real date. The game only compares
-     * two of these against each other (lock staleness).
-     */
-    {
-        uint32_t t = fi->ftime;
-        uint32_t year  = ((t >> 25) & 0x7F) + 1980;
-        uint32_t month = (t >> 21) & 0x0F;
-        uint32_t day   = (t >> 16) & 0x1F;
-        uint32_t min   = (t >> 5)  & 0x3F;
-        uint32_t sec   = (t & 0x1F) * 2;
-
-        st->st_mtime = (time_t)(year * 31536000u + month * 2592000u +
-                                day * 86400u + min * 60u + sec);
-    }
+    st->st_mtime  = filinfo_mtime(fi);
 }
+
+/*
+ * Files start at 3, because 0, 1 and 2 are the console. Handing one of those to
+ * open() makes a file share a destination with the screen or the keyboard, which
+ * is how a save file ends up printed instead of written.
+ */
+#define FIRST_FILE_FD 3
 
 static int alloc_fd(void)
 {
-    for (int i = 0; i < MAX_OPEN_FILES; i++) {
+    for (int i = FIRST_FILE_FD; i < MAX_OPEN_FILES; i++) {
         if (!open_files[i].used) {
             open_files[i].used = true;
             memset(&open_files[i].fil, 0, sizeof(open_files[i].fil));
@@ -222,6 +266,23 @@ int open(const char *path, int flags, ...)
     }
 
     open_files[fd].flags = flags;
+    open_files[fd].have_path = (strlen(path) < sizeof(open_files[fd].path));
+    if (open_files[fd].have_path)
+        strcpy(open_files[fd].path, path);
+
+    /*
+     * Cache the time for fstat(): the remembered session date first, then
+     * the directory, which is the truth for files placed from the host.
+     */
+    {
+        FILINFO fi;
+        int found;
+
+        open_files[fd].mtime = mtime_lookup(path, &found);
+        if (!found)
+            open_files[fd].mtime = (f_stat(path, &fi) == FR_OK)
+                                 ? filinfo_mtime(&fi) : (time_t)0;
+    }
     return fd;
 }
 
@@ -229,6 +290,29 @@ int creat(const char *path, mode_t mode)
 {
     (void)mode;
     return open(path, O_RDWR | O_CREAT | O_TRUNC, 0666);
+}
+
+/*
+ * The session clock in the same folded form filinfo_mtime() produces, so the
+ * two compare.
+ */
+static time_t session_mtime(void)
+{
+    time_t now = console_clock_now();
+    struct tm *tm = gmtime(&now);
+    int year;
+
+    if (tm == NULL)
+        return (time_t)0;
+
+    year = tm->tm_year + 1900;
+    if (year < 1980)
+        year = 1980;
+    if (year > 2107)
+        year = 2107;
+
+    return fold_datetime(year, tm->tm_mon + 1, tm->tm_mday,
+                         tm->tm_hour, tm->tm_min, tm->tm_sec);
 }
 
 int close(int fd)
@@ -239,6 +323,15 @@ int close(int fd)
     }
 
     f_close(&open_files[fd].fil);
+
+    /*
+     * Remember when this was written; the directory entry cannot (it has no
+     * RTC to ask). Read-only handles leave no trace.
+     */
+    if ((open_files[fd].flags & O_ACCMODE) != O_RDONLY &&
+        open_files[fd].have_path)
+        mtime_store(open_files[fd].path, session_mtime());
+
     open_files[fd].used = false;
     return 0;
 }
@@ -426,6 +519,7 @@ int unlink(const char *path)
         errno = (fr == FR_DENIED) ? EACCES : EIO;
         return -1;
     }
+    mtime_drop(path);
     return 0;
 }
 
@@ -450,6 +544,60 @@ int _link(const char *path, const char *newpath)
 
 int link(const char *path, const char *newpath) { return _link(path, newpath); }
 
+int rename(const char *oldpath, const char *newpath)
+{
+    FRESULT fr;
+
+    if (oldpath == NULL || newpath == NULL) {
+        errno = EFAULT;
+        return -1;
+    }
+    if (!storage_available) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    fr = f_rename(oldpath, newpath);
+    if (fr != FR_OK) {
+        TRACE("fileio: rename(\"%s\", \"%s\") -> %s (%d)\n",
+              oldpath, newpath, fr_name(fr), fr);
+        errno = (fr == FR_NO_FILE || fr == FR_NO_PATH) ? ENOENT :
+                (fr == FR_EXIST)                       ? EEXIST :
+                                                         EIO;
+        return -1;
+    }
+    mtime_move(oldpath, newpath);
+    return 0;
+}
+
+int _rename(const char *oldpath, const char *newpath)
+{
+    return rename(oldpath, newpath);
+}
+
+int fsync(int fd)
+{
+    if (fd < FIRST_FILE_FD || fd >= MAX_OPEN_FILES ||
+        !open_files[fd].used) {
+        errno = EBADF;
+        return -1;
+    }
+
+    if (f_sync(&open_files[fd].fil) != FR_OK) {
+        errno = EIO;
+        return -1;
+    }
+
+    /* Same correction as in close(): f_sync re-stamps as well. */
+    if ((open_files[fd].flags & O_ACCMODE) != O_RDONLY &&
+        open_files[fd].have_path)
+        mtime_store(open_files[fd].path, session_mtime());
+
+    return 0;
+}
+
+int _fsync(int fd) { return fsync(fd); }
+
 int stat(const char *path, struct stat *st)
 {
     FILINFO fi;
@@ -468,6 +616,20 @@ int stat(const char *path, struct stat *st)
     }
 
     stat_from_filinfo(st, &fi);
+
+    /*
+     * The remembered session date wins for files made here; see mtime.h.
+     * Host-placed files keep the directory time.
+     */
+    {
+        int found;
+        time_t remembered = mtime_lookup(path, &found);
+
+        if (found)
+            st->st_mtime = remembered;
+    }
+    TRACE("fileio: stat(\"%s\") -> mtime %lld\n", path,
+          (long long)st->st_mtime);
     return 0;
 }
 
@@ -475,6 +637,13 @@ int _stat(const char *path, struct stat *st) { return stat(path, st); }
 
 int fstat(int fd, struct stat *st)
 {
+    /* The console is a character device; this is how isatty() is answered. */
+    if (fd >= 0 && fd < FIRST_FILE_FD) {
+        memset(st, 0, sizeof(*st));
+        st->st_mode = S_IFCHR | 0666;
+        return 0;
+    }
+
     if (fd < 0 || fd >= MAX_OPEN_FILES || !open_files[fd].used) {
         errno = EBADF;
         return -1;
@@ -483,13 +652,16 @@ int fstat(int fd, struct stat *st)
     FILINFO fi;
     if (f_stat(open_files[fd].fil.flag == 0 ? "" : NULL, &fi) != FR_OK) {
         /*
-         * f_stat takes a path, not a handle, so re-stat is not possible
-         * from a descriptor alone. Derive what we can from the handle.
+         * f_stat takes a path, not a handle. The size is live from the
+         * handle; the time is what the directory said at open().
          */
         memset(st, 0, sizeof(*st));
         st->st_mode  = S_IFREG | 0666;
         st->st_size  = (size_t)f_size(&open_files[fd].fil);
         st->st_blksize = 512;
+        st->st_mtime = open_files[fd].mtime;
+        TRACE("fileio: fstat(%d) -> size %lu mtime %lld\n",
+              fd, (unsigned long)st->st_size, (long long)st->st_mtime);
         return 0;
     }
 
@@ -515,18 +687,34 @@ int access(const char *path, int mode)
     return 0;
 }
 
+/*
+ * Change the working directory, via FatFs (built with FF_FS_RPATH).
+ * Failure carries an errno, so a program told it cannot reach its data can
+ * say which directory that was instead of failing obscurely.
+ */
 int chdir(const char *path)
 {
-    /*
-     * No directory support, and none is needed: the working directory is the
-     * root of the volume and stays there. A program that asks to change
-     * directory is told it cannot, rather than being told it succeeded while
-     * carrying on somewhere it did not intend to be - a program that checks has
-     * a right to know, and one that does not is no worse off either way.
-     */
-    (void)path;
-    errno = ENOSYS;
-    return -1;
+    FRESULT fr;
+
+    if (path == NULL) {
+        errno = EFAULT;
+        return -1;
+    }
+    if (!storage_available) {             /* nothing to be inside */
+        errno = ENOENT;
+        return -1;
+    }
+
+    fr = f_chdir(path);
+    if (fr != FR_OK) {
+        TRACE("fileio: chdir(\"%s\") -> %s (%d)\n", path, fr_name(fr), fr);
+        errno = (fr == FR_NO_PATH || fr == FR_NO_FILE) ? ENOENT :
+                (fr == FR_INVALID_NAME)                ? EINVAL :
+                                                         EIO;
+        return -1;
+    }
+
+    return 0;
 }
 
 int _chdir(const char *path) { return chdir(path); }
