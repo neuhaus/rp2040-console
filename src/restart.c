@@ -29,6 +29,7 @@
 #include "pico/stdlib.h"
 #include "hardware/watchdog.h"
 
+#include "clock.h"
 #include "restart.h"
 
 /*
@@ -109,7 +110,11 @@ void _exit(int status)
      * flash means booting this same program again. The FAT volume lives
      * at 0x180000 and is not touched by a reboot, so the record file and
      * any saved game survive it.
+     *
+     * The session time is stored first, so the next boot offers
+     * when this one ended rather than the build date.
      */
+    console_clock_persist();
     watchdog_reboot(0, NULL, 0);
 
     /* Not reached: the watchdog fires within a millisecond. */

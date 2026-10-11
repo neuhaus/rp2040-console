@@ -9,7 +9,7 @@
  * FR_NO_FILE arrives on the happy path), and every byte competes with the
  * game's own output on the same USB link.
  *
- * Build with -DPICO_IO_TRACE=ON to have them when something needs
+ * Build with -DRP2040_CONSOLE_IO_TRACE=ON to have them when something needs
  * diagnosing. Genuine setup failures - no volume, wrong filesystem, mount
  * refused - stay unconditional, because those have no other way of saying
  * anything.
@@ -17,7 +17,7 @@
 #ifndef RP2040_CONSOLE_TRACE_H
 #define RP2040_CONSOLE_TRACE_H
 
-#ifdef PICO_IO_TRACE
+#ifdef RP2040_CONSOLE_IO_TRACE
 #include <stdio.h>
 #define TRACE(...) printf(__VA_ARGS__)
 #else

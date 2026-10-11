@@ -109,3 +109,23 @@ char *getlogin(void)
 {
     return NULL;
 }
+
+/*
+ * One process, so the only pid that exists is our own; anything else is from
+ * a previous boot. Lock files record the pid that took them, so "no such
+ * process" is how a stale lock is recognised.
+ */
+int kill(pid_t pid, int sig)
+{
+    if (pid != getpid()) {
+        errno = ESRCH;
+        return -1;
+    }
+    if (sig != 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    return 0;
+}
+
+int _kill(pid_t pid, int sig) { return kill(pid, sig); }

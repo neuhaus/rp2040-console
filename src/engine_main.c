@@ -17,10 +17,13 @@
  */
 
 #include <stdio.h>
+#include <stdint.h>
+#include <sys/random.h>
 
 #include <pico/stdlib.h>
 #include <pico/stdio.h>
 #include <pico/stdio_usb.h>
+#include <pico/time.h>
 
 #ifndef RP2040_CONSOLE_CONNECT_WAIT_MS
 #define RP2040_CONSOLE_CONNECT_WAIT_MS 0
@@ -34,6 +37,8 @@
 #include "restart.h"
 #include "clock.h"
 
+static void pid_init(void);
+
 /*
  * Everything the engine needs before the game runs.
  *
@@ -41,13 +46,15 @@
  *   env_init()         - the environment the game reads through getenv(),
  *                        chiefly TERM. A game that asks for TERM and gets
  *                        NULL tends to treat it as fatal, and it asks early.
+ *   storage_mount()    - the FAT volume, so the game's data files can be read
+ *                        and saves written. Before the clock, because the
+ *                        clock's default comes partly from a file on the
+ *                        volume. Failure is not fatal; the game reports what
+ *                        it could not do.
  *   console_clock_init() - the date and time, offered for correction on the
  *                        console. Nothing here has a clock, and a game that
  *                        stamps score files will otherwise stamp them with
  *                        1970.
- *   storage_mount()    - the FAT volume, so the game's data files can be read
- *                        and saves written. Failure is not fatal; the game
- *                        reports what it could not do.
  *
  * An __attribute__((constructor)) is deliberately not used for this. It would
  * not run: this SDK's startup calls runtime_init, main and exit, and does not
@@ -121,12 +128,23 @@ static void engine_start(void)
     console_diag_stage(DIAG_STAGE_ENV);
     probe(4);
 
-    console_clock_init();
-    console_diag_stage(DIAG_STAGE_CLOCK);
+    /*
+     * The volume before the clock: the clock's default is the later of the
+     * build date and the time the last session ended, and the latter lives
+     * in a file on the volume. Nothing here needs the time to mount.
+     */
+    storage_mount();
+    console_diag_stage(DIAG_STAGE_STORAGE);
     probe(5);
 
-    storage_mount();
+    console_clock_init();
+    console_diag_stage(DIAG_STAGE_CLOCK);
     probe(6);
+
+    /* A pid the locks can distinguish from last boot's; see below. */
+    pid_init();
+
+    console_diag_stage(DIAG_STAGE_READY);
 }
 
 /*
@@ -157,10 +175,22 @@ int main(int argc, char **argv)
 }
 
 /*
- * The game may record a pid and mix it into an RNG seed. There is one process
- * and no scheduler, so any stable non-zero value is honest.
+ * One process, so the pid only has to distinguish this boot from the last:
+ * lock files record the pid that took them, and a lock whose pid is gone
+ * means its game is gone. Stable within a boot, fresh across them.
  */
+static int boot_pid = 0;
+
+static void pid_init(void)
+{
+    uint32_t r = 0;
+
+    if (getentropy(&r, sizeof(r)) != 0 || r == 0)
+        r = (uint32_t)time_us_64();
+    boot_pid = (int)(r % 32767u) + 1;
+}
+
 int getpid(void)
 {
-    return 1;
+    return boot_pid != 0 ? boot_pid : 1;
 }

@@ -18,4 +18,10 @@ void console_clock_init(void);
  */
 time_t console_clock_now(void);
 
+/*
+ * Store the current session time on the volume, to be offered as the default
+ * next boot. Called once the date is settled and again before rebooting.
+ */
+void console_clock_persist(void);
+
 #endif /* RP2040_CONSOLE_CLOCK_H */

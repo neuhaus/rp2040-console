@@ -8,10 +8,10 @@
  * told, or it will report 1970 forever.
  *
  * So the engine asks, once, before the game starts. Pressing Enter accepts
- * the default, which is the moment this program was built - not current,
- * but recent enough to look sane in a score table and to put the moon in
- * the right place, and it means the board is never left at the epoch
- * because nobody was at the keyboard.
+ * the default, which is whenever the last session ended, or the moment this
+ * program was built if there was none - recent enough to look sane in a
+ * score table and to put the moon in the right place, and the board is never
+ * left at the epoch because nobody was at the keyboard.
  *
  * Two details worth having in mind:
  *
@@ -20,9 +20,8 @@
  *   forever, because a CDC link with no host open does not deliver an end
  *   of file either. Silence is treated as "accept the default".
  *
- *   Typed characters are not echoed from here. Echo is the host terminal's
- *   job throughout this port - it is how the game itself receives input -
- *   and echoing here as well would double them on screen.
+ *   The prompt echoes what is typed, because the host does not - screen
+ *   leaves echoing to this end throughout.
  *
  * The value entered is taken as UTC. newlib's localtime() with no timezone
  * set is gmtime(), so what the player types is what the game later reads
@@ -34,6 +33,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include <pico/stdlib.h>
 
@@ -57,18 +58,21 @@ static uint64_t clock_boot_us;  /* time_us_64() when that base was chosen */
  * Howard Hinnant's days_from_civil: no table, no loop, correct for the
  * whole range a player might type in.
  */
-static long days_from_civil(int y, unsigned m, unsigned d)
+static long days_from_civil(int y, int m, int d)
 {
     y -= m <= 2;
     const long era = (y >= 0 ? y : y - 399) / 400;
-    const unsigned yoe = (unsigned)(y - era * 400);
-    const unsigned doy = (153u * (m + (m > 2 ? 3u : 9u)) + 2u) / 5u + d - 1u;
-    const unsigned doe = yoe * 365u + yoe / 4u - yoe / 100u + doy;
-    return era * 146097L + (long)doe - 719468L;
+    const long yoe = y - era * 400;
+    /*
+     * The year counts from March, hence -3 after February and +9 for
+     * January and February.
+     */
+    const long doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+    const long doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097L + doe - 719468L;
 }
 
-static time_t epoch_of(int y, unsigned mo, unsigned d,
-                       int hh, int mm, int ss)
+static time_t epoch_of(int y, int mo, int d, int hh, int mm, int ss)
 {
     return (time_t)(days_from_civil(y, mo, d) * 86400L +
                     hh * 3600 + mm * 60 + ss);
@@ -108,8 +112,81 @@ static time_t build_epoch(void)
 
     sscanf(__TIME__, "%d:%d:%d", &hh, &mm, &ss);
 
-    return epoch_of(year, (unsigned)((m - months) / 3) + 1u, (unsigned)day,
-                    hh, mm, ss);
+    return epoch_of(year, (int)(m - months) / 3 + 1, day, hh, mm, ss);
+}
+
+/* The last session's time, kept on the volume across reboots. */
+#define clock_file  ".clock"
+#define clock_magic0 'C'
+#define clock_magic1 'K'
+#define clock_magic2 'L'
+#define clock_magic3 '2'   /* int64 time; "CKL1" was int32 */
+
+static time_t clock_recall(void)
+{
+    int fd;
+    uint8_t raw[12];
+    size_t n = 0;
+    uint64_t v;
+    int k;
+
+    fd = open(clock_file, O_RDONLY);
+    if (fd < 0)
+        return (time_t)0;
+
+    while (n < sizeof(raw)) {
+        int r = read(fd, raw + n, sizeof(raw) - n);
+        if (r <= 0)
+            break;
+        n += (size_t)r;
+    }
+    close(fd);
+
+    if (n != sizeof(raw))
+        return (time_t)0;
+    if (raw[0] != clock_magic0 || raw[1] != clock_magic1 ||
+        raw[2] != clock_magic2 || raw[3] != clock_magic3)
+        return (time_t)0;
+
+    v = 0;
+    for (k = 0; k < 8; k++)
+        v |= (uint64_t)raw[4 + k] << (8 * k);
+
+    /*
+     * Sanity, not paranoia: anything outside 1980..2107 cannot have come
+     * from this clock. Bounds in unfolded epoch seconds, wide enough for
+     * leap days either side.
+     */
+    if (v < 315532800ULL || v > 4350748800ULL)
+        return (time_t)0;
+    return (time_t)v;
+}
+
+void console_clock_persist(void)
+{
+    int fd;
+    uint64_t now = (uint64_t)console_clock_now();
+    uint8_t raw[12];
+    size_t n = 0;
+    int k;
+
+    raw[0] = clock_magic0;
+    raw[1] = clock_magic1;
+    raw[2] = clock_magic2;
+    raw[3] = clock_magic3;
+    for (k = 0; k < 8; k++)
+        raw[4 + k] = (uint8_t)(now >> (8 * k));
+
+    fd = open(clock_file, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if (fd < 0)
+        return;
+    while (n < sizeof(raw)) {
+        int w = write(fd, raw + n, sizeof(raw) - n);
+        if (w <= 0)
+            break;
+        n += (size_t)w;
+    }
+    close(fd);
 }
 
 /*
@@ -125,14 +202,16 @@ static size_t read_line(char *buf, size_t cap)
     size_t n = 0;
 
     for (;;) {
-        int c = getchar_timeout_us(n == 0 ? RP2040_CONSOLE_CLOCK_FIRST_MS
-                                          : RP2040_CONSOLE_CLOCK_CHAR_MS);
+        /* getchar_timeout_us takes microseconds; the limits are milliseconds. */
+        int c = getchar_timeout_us(n == 0 ? RP2040_CONSOLE_CLOCK_FIRST_MS * 1000u
+                                          : RP2040_CONSOLE_CLOCK_CHAR_MS * 1000u);
 
         if (c == PICO_ERROR_TIMEOUT || c == PICO_ERROR_NO_DATA) {
             buf[0] = 0;
             return 0;
         }
         if (c == '\r' || c == '\n') { /* the host sends CR, some send LF */
+            putchar('\n');           /* the host does not echo, so this end does */
             buf[n] = 0;
             return n;
         }
@@ -147,8 +226,10 @@ static size_t read_line(char *buf, size_t cap)
             }
             continue;
         }
-        if (c >= ' ' && c < 127 && n + 1 < cap)
+        if (c >= ' ' && c < 127 && n + 1 < cap) {
+            putchar(c);
             buf[n++] = (char)c;
+        }
     }
 }
 
@@ -175,27 +256,42 @@ static bool parse_datetime(const char *s, time_t *out)
     if (fields < 3)
         return false;
 
-    if (y < 1970 || y > 2099)
+    /*
+     * 2107 rather than a rounder number: FAT directory years stop there, so
+     * a later date cannot be recorded for the file it would date. Refusing
+     * it is kinder than granting what cannot be kept.
+     */
+    if (y < 1970 || y > 2107)
         return false;
     if (mo < 1 || mo > 12 || d < 1 || d > 31)
         return false;
     if (hh > 23 || mm > 59 || ss > 59)
         return false;
 
-    *out = epoch_of(y, (unsigned)mo, (unsigned)d, hh, mm, ss);
+    *out = epoch_of(y, mo, d, hh, mm, ss);
     return true;
 }
 
 void console_clock_init(void)
 {
     time_t deflt = build_epoch();
+    time_t remembered = clock_recall();
     char line[40];
+
+    /*
+     * The later of the build date and whenever the last session ended. The
+     * clock does not survive a reboot on its own, but the volume does, so a
+     * board that ran yesterday offers yesterday instead of the build date -
+     * and still offers it for correction, because the date matters to the
+     * game.
+     */
+    if (remembered > deflt)
+        deflt = remembered;
 
 #ifdef RP2040_CONSOLE_CLOCK_NO_PROMPT
     /*
      * Built without the prompt: a game meant to run unattended, or one that
-     * does not care about the date, gets the build epoch and no delay at
-     * startup.
+     * does not care about the date, takes the default with no delay.
      */
     clock_base = deflt;
     (void)line;
@@ -229,6 +325,13 @@ void console_clock_init(void)
      * counted as time having passed since the date was set.
      */
     clock_boot_us = time_us_64();
+
+    /*
+     * Remembered straight away, so a board that loses power mid-session
+     * still re-offers this session's date rather than the build's. The
+     * reboot path stores it again with the elapsed time included.
+     */
+    console_clock_persist();
 }
 
 time_t console_clock_now(void)
