@@ -22,17 +22,7 @@ own manifest.
 
 ## Why bare metal
 
-An RP2040 has 264KB of SRAM and 2MB of flash mapped at `0x10000000`. Text
-executes in place through the XIP cache, so only writable data costs RAM. A
-game from 1985 that is one large contiguous image - a quarter megabyte of text
-and constant tables, plus a habit of static arrays - will not fit a user
-process on a small unix with kernel/user split and a per-process cap, however
-that split is tuned, and will fit comfortably here: the tables stay in flash and
-the program gets essentially all 264KB.
-
-The cost is that nothing is there when you arrive. No terminal driver, no
-filesystem, no process table, no clock, no libc that has ever heard of a device
-it cannot write to. This engine is what fills in those gaps.
+No OS to take away SRAM from the app - plus it's harder to cheat!
 
 ## Plugging a game in
 
@@ -320,3 +310,7 @@ These are the ones that cost time to find, in rough order of how much they cost.
 - **A stale CMake cache survives removing the call that set it.** Options like
   `pico_enable_stdio_uart()` need to be set explicitly to 0 rather than simply not
   set, if the build directory has ever seen them on.
+
+## Licence
+
+3-clause BSD
