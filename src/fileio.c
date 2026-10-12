@@ -649,23 +649,21 @@ int fstat(int fd, struct stat *st)
         return -1;
     }
 
-    FILINFO fi;
-    if (f_stat(open_files[fd].fil.flag == 0 ? "" : NULL, &fi) != FR_OK) {
-        /*
-         * f_stat takes a path, not a handle. The size is live from the
-         * handle; the time is what the directory said at open().
-         */
-        memset(st, 0, sizeof(*st));
-        st->st_mode  = S_IFREG | 0666;
-        st->st_size  = (size_t)f_size(&open_files[fd].fil);
-        st->st_blksize = 512;
-        st->st_mtime = open_files[fd].mtime;
-        TRACE("fileio: fstat(%d) -> size %lu mtime %lld\n",
-              fd, (unsigned long)st->st_size, (long long)st->st_mtime);
-        return 0;
-    }
-
-    stat_from_filinfo(st, &fi);
+    /*
+     * f_stat() takes a path, not an open handle, so the descriptor is filled
+     * from the handle itself. The size is live - it grows as the file is
+     * written, which is what a caller stat'ing its own open save file is
+     * really asking - and the time is what open() resolved: the remembered
+     * session date, or the directory stamp when there is none.
+     */
+    memset(st, 0, sizeof(*st));
+    st->st_mode    = S_IFREG | 0666;
+    st->st_size    = (size_t)f_size(&open_files[fd].fil);
+    st->st_blksize = 512;
+    st->st_blocks  = (st->st_size + 511) / 512;
+    st->st_mtime   = open_files[fd].mtime;
+    TRACE("fileio: fstat(%d) -> size %lu mtime %lld\n",
+          fd, (unsigned long)st->st_size, (long long)st->st_mtime);
     return 0;
 }
 
