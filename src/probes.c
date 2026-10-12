@@ -14,8 +14,8 @@
  *   [2] reached the wrapped main()   - .data/.bss init and ctors OK
  *   [3] stdio_init_all() returned    - USB + UART drivers initialised
  *   [4] env_init() done              - TERM and friends available
- *   [5] console_clock_init() done    - date settled, prompt not blocking
- *   [6] storage_mount() done         - volume mounted, or absent
+ *   [5] storage_mount() done         - volume mounted, or absent
+ *   [6] console_clock_init() done    - date settled, prompt not blocking
  *
  * A game that stops before [6] has a different problem than one that stops
  * after it: the first five are engine and hardware, everything past six is
@@ -51,7 +51,7 @@ void probe_init(void)
     uart_set_translate_crlf(uart_get_instance(0), true);
 
     probe_enabled = true;
-    probe_raw("\r\n[b] c runtime\r\n");
+    probe_raw("\r\n[1] c runtime\r\n");
 }
 
 void probe(int stage)

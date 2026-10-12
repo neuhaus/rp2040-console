@@ -13,7 +13,7 @@
  * saves and bones. Carving a FAT volume out of the Pico's own flash
  * means it works with no SD card, no wiring and no CSD parsing.
  *
- * Layout: 512KB at flash offset 0x1C0000. The firmware occupies roughly
+ * Layout: 512KB at flash offset 0x180000. The firmware occupies roughly
  * 300KB, so there is no overlap.
  */
 DWORD   get_flash_sector_count(void);
