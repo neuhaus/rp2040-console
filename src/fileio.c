@@ -478,7 +478,12 @@ long lseek(int fd, long offset, int whence)
         return -1;
     }
 
-    if (f_lseek(fil, (FSIZE_t)base + (FSIZE_t)offset) < 0) {
+    /*
+     * f_lseek reports an FRESULT (0..FR_INVALID_PARAMETER), never a negative
+     * value, so the failure test has to be against FR_OK - "< 0" is a
+     * constant false and would swallow every seek error.
+     */
+    if (f_lseek(fil, (FSIZE_t)base + (FSIZE_t)offset) != FR_OK) {
         errno = EINVAL;
         return -1;
     }
@@ -497,7 +502,14 @@ long _lseek(int fd, long offset, int whence) { return lseek(fd, offset, whence);
 int unlink(const char *path)
 {
     FILINFO fi;
-    FRESULT fr = f_stat(path, &fi);
+    FRESULT fr;
+
+    if (!storage_available) {             /* nothing mounted, so nothing to remove */
+        errno = ENOENT;
+        return -1;
+    }
+
+    fr = f_stat(path, &fi);
 
     if (fr != FR_OK) {
         errno = ENOENT;
