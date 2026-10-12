@@ -26,8 +26,24 @@
 #include "trace.h"
 
 FATFS   fs;
-FIL     file;
-DIR     dir;
+
+/*
+ * Which backend answers drive 0.
+ *
+ * The game opens bare relative paths, which FatFs resolves to the current
+ * drive; that is 0 and cannot be relocated at runtime (this FatFs has no
+ * f_chdrv). So whichever volume the game is meant to see - the onboard flash,
+ * or, only when that is absent, the SD card - has to be mounted on drive 0,
+ * and these entry points have to forward drive 0 to that backend rather than
+ * choosing by the drive number the caller passed. Choosing by pdrv would route
+ * the card's mount attempt (drive 0) to the flash and the card would never be
+ * read through FatFs at all.
+ *
+ * flash_mount() runs first; if it succeeds the card is never brought up and
+ * this stays false. storage_mount() sets it only on the path where the flash
+ * volume is missing and the card takes over.
+ */
+static bool backend_is_sd;
 
 /* --- FatFs disk interface ------------------------------------------- */
 
@@ -36,39 +52,42 @@ DIR     dir;
  *   DSTATUS disk_status(BYTE)
  *   DRESULT disk_read/disk_write(BYTE, ..., LBA_t, UINT)
  *   DRESULT disk_ioctl(BYTE, BYTE, void*)
+ *
+ * The pdrv argument is ignored: there is one volume, on drive 0, served by
+ * whichever backend is active.
  */
 
 DSTATUS disk_status(BYTE pdrv)
 {
-    if (pdrv == 0)
-        return 0;               /* onboard flash is always present */
+    (void)pdrv;
 
-    /*
-     * A card present but mounted read-write is STA_NOINIT only until
-     * FatFs has finished mounting; sd_ready() reflects our own init.
-     */
-    return sd_ready() ? 0 : STA_NOINIT;
+    if (backend_is_sd)
+        return sd_ready() ? 0 : STA_NOINIT;
+
+    return 0;                   /* onboard flash is always present */
 }
 
 DSTATUS disk_initialize(BYTE pdrv)
 {
-    if (pdrv == 0)
-        return 0;
+    (void)pdrv;
 
-    return sd_ready() ? 0 : STA_NOINIT;
+    if (backend_is_sd)
+        return sd_ready() ? 0 : STA_NOINIT;
+
+    return 0;
 }
 
 DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void *buff)
 {
-    if (pdrv == 0)
-        return flash_disk_ioctl(pdrv, cmd, buff);
+    if (backend_is_sd)
+        return sd_disk_ioctl(pdrv, cmd, buff);
 
-    return sd_disk_ioctl(pdrv, cmd, buff);
+    return flash_disk_ioctl(pdrv, cmd, buff);
 }
 
 DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count)
 {
-    if (pdrv == 0)
+    if (!backend_is_sd)
         return flash_disk_read(pdrv, buff, sector, count);
 
     /* FatFs owns the SPI bus; nothing else may touch it mid-transaction. */
@@ -81,7 +100,7 @@ DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count)
 
 DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count)
 {
-    if (pdrv == 0)
+    if (!backend_is_sd)
         return flash_disk_write(pdrv, buff, sector, count);
 
     uint32_t save = save_and_disable_interrupts();
@@ -188,8 +207,9 @@ bool storage_mount(void)
      * Onboard flash first. It always exists, needs no card and no
      * wiring, and it is what makes the game's lock files, data files
      * and saves work. It occupies drive 0 because that is the drive the
-     * game's relative paths resolve to; an SD card, if fitted, takes
-     * drive 1 and is not required.
+     * game's relative paths resolve to. The SD card below is a fallback,
+     * not a companion: it is brought up only when the flash volume is
+     * absent, and it is mounted on that same drive 0 for the same reason.
      */
     if (flash_mount()) {
         storage_set_available(true);
@@ -210,10 +230,18 @@ bool storage_mount(void)
         return false;
     }
 
-    FRESULT fr = f_mount(&fs, "", 1);
+    /*
+     * Route drive 0 to the card *before* mounting: f_mount() probes the volume
+     * through disk_read, and that has to reach the card rather than the blank
+     * flash the game's relative paths would otherwise resolve to.
+     */
+    backend_is_sd = true;
+
+    FRESULT fr = f_mount(&fs, "0:", 1);
     if (fr != FR_OK)
     {
         printf("storage: mount failed (%d) - is the card FAT formatted?\n", fr);
+        backend_is_sd = false;
         storage_set_available(false);
         return false;
     }
