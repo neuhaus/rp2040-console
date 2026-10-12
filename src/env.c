@@ -13,11 +13,12 @@
 #include "env.h"
 
 #define ENV_MAX   12
+#define ENV_NAME  24
 #define ENV_VALUE 64
 
 struct env_slot
 {
-    const char *name;
+    char name[ENV_NAME];
     char value[ENV_VALUE];
 };
 
@@ -64,28 +65,29 @@ int setenv(const char *name, const char *value, int overwrite)
     if (name == NULL || value == NULL || *name == 0 || strchr(name, '='))
         return -1;
 
-    struct env_slot *s = lookup(name);
-    int added = 0;
+    /*
+     * Refuse rather than truncate either half: a silently shortened name or
+     * data directory is a far more confusing failure than a variable that is
+     * simply absent.
+     */
+    if (strlen(name) >= ENV_NAME || strlen(value) >= ENV_VALUE)
+        return -1;
 
-    if (s != NULL) {
-        if (!overwrite)
-            return 0;
-    } else {
+    struct env_slot *s = lookup(name);
+
+    if (s == NULL) {
         if (slots_used == ENV_MAX)
             return -1; /* declared the environment full rather than drop it */
         s = &slots[slots_used++];
-        s->name = name; /* names are literals from the table or the caller */
-        added = 1;
-    }
 
-    /*
-     * Refuse rather than truncate: a silently shortened data directory or TERM
-     * is a far more confusing failure than a variable that is simply absent.
-     */
-    if (strlen(value) >= ENV_VALUE) {
-        if (added)
-            slots_used--;
-        return -1;
+        /*
+         * Keep a copy, not the caller's pointer. A name handed in from a
+         * stack buffer or a temporary would otherwise be read back through
+         * getenv() long after that storage is gone. Length was checked above.
+         */
+        strcpy(s->name, name);
+    } else if (!overwrite) {
+        return 0;
     }
 
     strcpy(s->value, value);
