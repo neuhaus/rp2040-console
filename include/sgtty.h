@@ -28,6 +28,15 @@
  * tolerate it.
  */
 
+struct sgttyb
+{
+    char sg_ispeed;   /* input speed     */
+    char sg_ospeed;   /* output speed    */
+    char sg_erase;    /* erase character */
+    char sg_kill;     /* kill character  */
+    short sg_flags;   /* mode flags      */
+};
+
 struct ltchars
 {
     char t_suspc;   /* stop process signal */
