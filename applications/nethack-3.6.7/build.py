@@ -15,7 +15,7 @@ REPO = 'https://github.com/NetHack/NetHack.git'
 
 # The line printed before the game starts, baked into the image as the BANNER
 # environment variable.  --banner or $BANNER overrides it.
-DEFAULT_BANNER = 'Welcome to NetHack 3.6.7 running on RP2040'
+DEFAULT_BANNER = 'RP2040 Console ready.'
 
 # Files NetHack reads through the data librarian (dlb_*), in the order they
 # are packed.  `symbols` is not here: NetHack opens it through

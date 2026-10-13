@@ -139,19 +139,20 @@ the saved games in `save/`, each with its size and the date the session clock
 gave it:
 
 ```
-Welcome to NetHack 3.6.7 running on RP2040
+RP2040 Console ready.
 Saved games in save/:
   1000wizard               390368 bytes  2026-10-13 18:22
 ```
 
 The banner is not a literal in the port. It is baked into the image as the
 `BANNER` environment variable, set at build time from `--banner` or `$BANNER`
-(the default is the line above); `--banner ''` drops it. The listing needs a
-"last saved" date, which FatFs cannot supply -- it is built timestamp-off and
-stamps every file it writes 2022 -- so the engine remembers the session time
-when it closes a file and reads it back for the listing; a file it never wrote
-is shown without a date. Nothing clears the screen here, so the lines stay in
-the terminal's scrollback once the game draws over them.
+(the default is the line above); `--banner ''` drops it. The game prints its
+own NetHack version banner, so this line deliberately does not repeat it. The
+listing needs a "last saved" date, which FatFs cannot supply -- it is built
+timestamp-off and stamps every file it writes 2022 -- so the engine remembers
+the session time when it closes a file and reads it back for the listing; a
+file it never wrote is shown without a date. Nothing clears the screen here, so
+the lines stay in the terminal's scrollback once the game draws over them.
 
 ## Outputs and checks
 

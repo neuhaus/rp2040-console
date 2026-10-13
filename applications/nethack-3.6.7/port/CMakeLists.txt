@@ -22,7 +22,7 @@ set(NETHACK_OPTIONS "" CACHE STRING
 # One line printed before the game starts, handed to the engine as the BANNER
 # environment variable.  It is build-time text, not a literal in the port, so
 # a build can name itself; build.py sets it from --banner or $BANNER.
-set(NETHACK_BANNER "Welcome to NetHack 3.6.7 running on RP2040" CACHE STRING
+set(NETHACK_BANNER "RP2040 Console ready." CACHE STRING
         "Startup banner line; empty for none")
 
 # NetHack's whoami() seeds the character name from $USER or $LOGNAME and then
