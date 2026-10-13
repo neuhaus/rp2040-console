@@ -595,3 +595,132 @@
      { '#', "#", "perform an extended command",
              doextcmd, IFBURIED | GENERALCMD },
      { M('?'), "?", "list all extended commands",
+--- pristine/src/drawing.c
++++ edited/src/drawing.c
+@@ -548,7 +548,7 @@
+ 
+ void
+ update_ov_primary_symset(symp, val)
+-struct symparse *symp;
++const struct symparse *symp;
+ int val;
+ {
+     ov_primary_syms[symp->idx] = val;
+@@ -556,7 +556,7 @@
+ 
+ void
+ update_ov_rogue_symset(symp, val)
+-struct symparse *symp;
++const struct symparse *symp;
+ int val;
+ {
+     ov_rogue_syms[symp->idx] = val;
+@@ -564,7 +564,7 @@
+ 
+ void
+ update_primary_symset(symp, val)
+-struct symparse *symp;
++const struct symparse *symp;
+ int val;
+ {
+     primary_syms[symp->idx] = val;
+@@ -572,7 +572,7 @@
+ 
+ void
+ update_rogue_symset(symp, val)
+-struct symparse *symp;
++const struct symparse *symp;
+ int val;
+ {
+     rogue_syms[symp->idx] = val;
+@@ -632,7 +632,7 @@
+     "primary", "rogue", (const char *) 0,
+ };
+ 
+-struct symparse loadsyms[] = {
++const struct symparse loadsyms[] = {
+     { SYM_CONTROL, 0, "start" },
+     { SYM_CONTROL, 0, "begin" },
+     { SYM_CONTROL, 1, "finish" },
+--- pristine/src/files.c
++++ edited/src/files.c
+@@ -3311,7 +3311,7 @@
+ int which_set;
+ {
+     int val, i;
+-    struct symparse *symp;
++    const struct symparse *symp;
+     char *bufp, *commentp, *altp;
+ 
+     if (strlen(buf) >= BUFSZ)
+--- pristine/src/options.c
++++ edited/src/options.c
+@@ -465,7 +465,7 @@
+ 
+ extern char configfile[]; /* for messages */
+ 
+-extern struct symparse loadsyms[];
++extern const struct symparse loadsyms[];
+ static boolean need_redraw; /* for doset() */
+ 
+ #if defined(TOS) && defined(TEXTCOLOR)
+@@ -6125,7 +6125,7 @@
+ {
+     int val;
+     char *op, *symname, *strval;
+-    struct symparse *symp;
++    const struct symparse *symp;
+ 
+     if ((op = index(opts, ',')) != 0) {
+         *op++ = 0;
+@@ -6160,13 +6160,13 @@
+     return TRUE;
+ }
+ 
+-struct symparse *
++const struct symparse *
+ match_sym(buf)
+ char *buf;
+ {
+     size_t len = strlen(buf);
+     const char *p = index(buf, ':'), *q = index(buf, '=');
+-    struct symparse *sp = loadsyms;
++    const struct symparse *sp = loadsyms;
+ 
+     if (!p || (q && q < p))
+         p = q;
+@@ -6182,7 +6182,7 @@
+             return sp;
+         sp++;
+     }
+-    return (struct symparse *) 0;
++    return (const struct symparse *) 0;
+ }
+ 
+ int
+--- pristine/include/extern.h
++++ edited/include/extern.h
+@@ -594,10 +594,10 @@
+ E void NDECL(init_ov_primary_symbols);
+ E void NDECL(init_ov_rogue_symbols);
+ E void FDECL(clear_symsetentry, (int, BOOLEAN_P));
+-E void FDECL(update_primary_symset, (struct symparse *, int));
+-E void FDECL(update_rogue_symset, (struct symparse *, int));
+-E void FDECL(update_ov_primary_symset, (struct symparse *, int));
+-E void FDECL(update_ov_rogue_symset, (struct symparse *, int));
++E void FDECL(update_primary_symset, (const struct symparse *, int));
++E void FDECL(update_rogue_symset, (const struct symparse *, int));
++E void FDECL(update_ov_primary_symset, (const struct symparse *, int));
++E void FDECL(update_ov_rogue_symset, (const struct symparse *, int));
+ E boolean FDECL(cursed_object_at, (int, int));
+ E nhsym FDECL(get_othersym, (int, int));
+ 
+@@ -1792,7 +1792,7 @@
+ E int FDECL(load_symset, (const char *, int));
+ E void NDECL(free_symsets);
+ E boolean FDECL(parsesymbols, (char *, int));
+-E struct symparse *FDECL(match_sym, (char *));
++E const struct symparse *FDECL(match_sym, (char *));
+ E void NDECL(set_playmode);
+ E int FDECL(sym_val, (const char *));
+ E int FDECL(query_color, (const char *));
