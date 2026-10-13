@@ -59,14 +59,17 @@ NetHack keeps one file per level the player has left and re-reads it on return.
 On a volume this size that is the binding constraint on how deep a game can go,
 so level files and save files are compressed too. They use Tamp rather than the
 data library's deflate: a level file is written on the board while playing, and
-Tamp's compressor is far smaller than a deflate encoder. The port keeps
-upstream's `ZEROCOMP` plumbing -- its option, its `SFI1_ZEROCOMP` savefile flag
-and its `bufon`/`bufoff` raw-front-matter protocol -- and swaps only the codec
-for Tamp, so `src/save.c` and `src/restore.c` change only where they do the
-byte I/O.
+Tamp's compressor is far smaller than a deflate encoder. Upstream's `ZEROCOMP`
+zero-run codec is kept as well and composed *in front of* Tamp: the bytes are
+first run-length encoded (a run of N zeros becomes two bytes, `00 <N-1>`), then
+Tamp-compressed, and restore reverses the two. That is not redundant with Tamp
+-- it cuts 9-12% off a level file -- because Tamp caps its match length, so a
+long zero run costs it several tokens. The rest of the plumbing is upstream's:
+the `SFI1_ZEROCOMP` savefile flag and the `bufon`/`bufoff` raw-front-matter
+protocol.
 
-Level files drop from about 20-30 KB to about 1.4-8 KB (roughly 8x), so about
-**55 levels** fit in the free space instead of about four. Without this the
+Level files drop from about 20-30 KB to about 2-3 KB (roughly 10x), so about
+**64 levels** fit in the free space instead of about four. Without this the
 volume filled after a few levels, the level write failed as a short write, and
 NetHack panicked with an empty reason line (the panic save could not be written
 either, so `NH_abort()` ran before the reason was printed).
