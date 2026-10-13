@@ -158,17 +158,22 @@ the lines stay in the terminal's scrollback once the game draws over them.
 
 Default outputs are under `build/nethack-3.6.7/hardware/`:
 
-- `nethack.uf2`: XIP firmware below flash offset `0x180000` (about 1.49 MB).
-- `nethack-volume.uf2`: 512 KB FAT12 volume at `0x180000`, ending at 2 MB.
+- `nethack.uf2`: XIP firmware below flash offset `0x188000` (about 1.49 MB).
+- `nethack-volume.uf2`: 480 KB FAT12 volume at `0x188000`, ending at 2 MB.
 - `nethack.elf`, `nethack.bin` and `nethack-volume.img`: inspection artifacts.
 
 The volume holds `nhdata` (the compressed library), `symbols` (the one data file
 NetHack opens through plain stdio rather than the librarian), empty `record`,
 `perm`, `logfile` and `xlogfile` (NetHack locks and appends to all four, and
-`lock_file()` opens the file itself), and a `save` directory. About 400 KB of
-the 512 KB is used, leaving about **125 KB** for the levels a game has visited.
+`lock_file()` opens the file itself), and a `save` directory. About 380 KB of
+the 480 KB is used, leaving about **90 KB** for the levels a game has visited.
 The volume is FAT12 with 512-byte clusters, so the many small level files cost
 almost no slack.
+
+The split between firmware and volume is set by `FS_OFFSET`/`FS_SIZE` in the
+manifest. The volume starts at `0x188000` so the firmware has about **47 KB** of
+headroom; the volume's free space is what a long game has for level files, so
+raise `FS_OFFSET` only as far as the savegame budget allows.
 
 The build generates all game data, checks host/ARM sizes and offsets, validates
 firmware/heap/stack bounds, checks FAT with fsck and verifies UF2 addresses and

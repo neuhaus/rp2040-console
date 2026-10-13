@@ -15,7 +15,7 @@ assert not any(line.split()[-1] == 'link'
     'NetHack lock code must use NO_FILE_LINKS on FAT'
 print('PASS: NetHack file locks use exclusive file creation, not unsupported hard links')
 
-assert (b / 'nethack.bin').stat().st_size < 0x180000, 'Firmware overlaps data volume'
+assert (b / 'nethack.bin').stat().st_size <= 0x200000, 'Firmware exceeds 2 MB flash'
 
 ranges = []
 for name in ['nethack.uf2', 'nethack-volume.uf2']:
@@ -31,8 +31,14 @@ for name in ['nethack.uf2', 'nethack-volume.uf2']:
         assert index == i // 512 and count == len(data) // 512
         blocks.append((addr, addr + size))
     ranges.append((min(x[0] for x in blocks), max(x[1] for x in blocks)))
-assert 0x10000000 <= ranges[0][0] < ranges[0][1] <= 0x10180000
-assert ranges[1] == (0x10180000, 0x10200000)
+# The volume sits at the manifest's FS_OFFSET and runs to the top of flash;
+# take the boundary from the volume image itself so it cannot drift from the
+# manifest.
+fs_xip = ranges[1][0]
+assert ranges[1][1] == 0x10200000, 'Volume must end at the top of 2 MB flash'
+assert 0x10000000 + (b / 'nethack.bin').stat().st_size <= fs_xip, \
+    'Firmware overlaps data volume'
+assert 0x10000000 <= ranges[0][0] < ranges[0][1] <= fs_xip
 
 symbols = {}
 for line in subprocess.check_output(
@@ -40,8 +46,8 @@ for line in subprocess.check_output(
     parts = line.split()
     if len(parts) == 3:
         symbols[parts[2]] = int(parts[0], 16)
-assert 0x10000000 <= symbols['main'] < 0x10180000, 'main does not execute from flash'
-assert 0x10000000 <= symbols['rp2040_console_game_main'] < 0x10180000
+assert 0x10000000 <= symbols['main'] < fs_xip, 'main does not execute from flash'
+assert 0x10000000 <= symbols['rp2040_console_game_main'] < fs_xip
 assert symbols['__HeapLimit'] == 0x2003c000 \
     and symbols['__bss_end__'] < symbols['__HeapLimit'] < symbols['__StackBottom']
 print('PASS: XIP entry points, 2 MB flash bounds, UF2 families/blocks, nonoverlapping images, heap/stack bounds')

@@ -71,7 +71,7 @@ rp2040_console_game(NAME nethack ${_restart_option}
         EMPTY_FILES record perm logfile xlogfile
         DATA_DIRS save
         LISTDIR save
-        FS_OFFSET 0x180000 FS_SIZE 0x80000
+        FS_OFFSET 0x188000 FS_SIZE 0x78000
         HEAP_END 0x2003c000 STACK_RESERVE 24576)
 target_compile_options(nethack PRIVATE -Oz -fsigned-char
         -fno-unwind-tables -fno-asynchronous-unwind-tables)
