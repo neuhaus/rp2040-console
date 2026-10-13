@@ -17,8 +17,9 @@ dropping every optional file still leaves more data than the chip has room for.
 So the read-only data is compressed, which is what makes the port fit:
 
 - Every file NetHack reads through its data librarian (`dungeon`, the level
-  descriptions, `quest.dat`, the encyclopedia `data`, rumors, oracles, the help
-  screens, `bogusmon`/`engrave`/`epitaph`, `options`) is compressed with
+  descriptions, `quest.dat`, the encyclopedia `data`, `symbols`, rumors,
+  oracles, the help screens, `bogusmon`/`engrave`/`epitaph`, `options`) is
+  compressed with
   [Tamp](https://github.com/BrianPugh/tamp), whose decoder is about 2 KB of
   code and needs only a 1-32 KB window per open file. The window size is chosen
   per file (see below) and recorded in each stream's header, so the reader
@@ -38,9 +39,9 @@ So the read-only data is compressed, which is what makes the port fit:
   entry. NetHack's access patterns are almost entirely forward scans, and the
   files are small enough that this is cheaper than the flash it saves.
 
-The 137 files packed into `nhdata` total **922,752 bytes (about 901 KB)**
-uncompressed. Tamp brings them to about **334 KB** (a ratio near 0.37), plus a
-3,848-byte header and directory. Only the compressed form fits: uncompressed as
+The 138 files packed into `nhdata` total **939,508 bytes (about 918 KB)**
+uncompressed. Tamp brings them to about **338 KB** (a ratio near 0.37), plus a
+3,876-byte header and directory. Only the compressed form fits: uncompressed as
 separate files the same data would not fit on the volume alongside the
 firmware, and even a single uncompressed archive would be larger than what is
 left over after the firmware.
@@ -166,21 +167,21 @@ the lines stay in the terminal's scrollback once the game draws over them.
 
 Default outputs are under `build/nethack-3.6.7/hardware/`:
 
-- `nethack.uf2`: XIP firmware below flash offset `0x188000` (about 1.49 MB).
-- `nethack-volume.uf2`: 480 KB FAT12 volume at `0x188000`, ending at 2 MB.
+- `nethack.uf2`: XIP firmware below flash offset `0x17D000` (about 1.49 MB).
+- `nethack-volume.uf2`: 524 KB FAT12 volume at `0x17D000`, ending at 2 MB.
 - `nethack.elf`, `nethack.bin` and `nethack-volume.img`: inspection artifacts.
 
-The volume holds `nhdata` (the compressed library), `symbols` (the one data file
-NetHack opens through plain stdio rather than the librarian), empty `record`,
+The volume holds `nhdata` (the compressed library, which carries every data
+file including `symbols`), empty `record`,
 `perm`, `logfile` and `xlogfile` (NetHack locks and appends to all four, and
-`lock_file()` opens the file itself), and a `save` directory. About 370 KB of
-the 480 KB is used, leaving about **109 KB** for the levels a game has visited.
+`lock_file()` opens the file itself), and a `save` directory. About 363 KB of
+the 524 KB is used, leaving about **161 KB** for the levels a game has visited.
 The volume is FAT12 with 512-byte clusters, so the many small level files cost
 almost no slack.
 
 The split between firmware and volume is set by `FS_OFFSET`/`FS_SIZE` in the
-manifest. The volume starts at `0x188000` so the firmware has about **47 KB** of
-headroom; the volume's free space is what a long game has for level files, so
+manifest. The volume starts at `0x17D000`, just above the firmware (about 6 KB
+to spare); the volume's free space is what a long game has for level files, so
 raise `FS_OFFSET` only as far as the savegame budget allows.
 
 The build generates all game data, checks host/ARM sizes and offsets, validates

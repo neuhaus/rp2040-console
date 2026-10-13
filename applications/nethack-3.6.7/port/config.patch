@@ -644,7 +644,20 @@
      { SYM_CONTROL, 1, "finish" },
 --- pristine/src/files.c
 +++ edited/src/files.c
-@@ -3311,7 +3311,7 @@
+@@ -3235,6 +3235,12 @@
+ {
+     FILE *fp;
+ 
++    /* The symbol set is in the data librarian now (compressed); ask the
++     * librarian for a stdio FILE* over the decompressed stream.  Fall back to
++     * the filesystem for a build that ships "symbols" as a plain file. */
++    if ((fp = nhdlb_memopen(SYMBOLS)) != 0)
++        return fp;
++
+     fp = fopen_datafile(SYMBOLS, "r",
+ #ifdef WIN32
+                             SYSCONFPREFIX
+@@ -3311,7 +3317,7 @@
  int which_set;
  {
      int val, i;

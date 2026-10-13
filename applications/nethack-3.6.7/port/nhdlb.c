@@ -388,4 +388,41 @@ dlb_ftell(dlb *dp)
     return (long) ((struct nh_stream *) dp->lib)->upos;
 }
 
+/*
+ * Serve a DLB entry as a stdio FILE*, for the one reader that wants stdio
+ * rather than the dlb_* calls - the symbol-set parser reads "symbols" with
+ * fgets().  funopen's read hook streams from the Tamp decoder and its close
+ * hook releases the dlb handle, so the file is never copied whole into
+ * memory; only the decoder window is held, as for any other entry.
+ */
+static int
+nh_memread(void *cookie, char *buf, int len)
+{
+    return (len > 0) ? dlb_fread(buf, 1, len, (dlb *) cookie) : 0;
+}
+
+static int
+nh_memclose(void *cookie)
+{
+    (void) dlb_fclose((dlb *) cookie);
+    return 0;
+}
+
+FILE *
+nhdlb_memopen(const char *name)
+{
+    dlb *dp = dlb_fopen(name, "r");
+    FILE *fp;
+
+    if (!dp)
+        return (FILE *) 0;
+    fp = funopen(dp, nh_memread, (int (*)(void *, const char *, int)) 0,
+                 (fpos_t (*)(void *, fpos_t, int)) 0, nh_memclose);
+    if (!fp) {
+        (void) dlb_fclose(dp);
+        return (FILE *) 0;
+    }
+    return fp;
+}
+
 #endif /* DLB */

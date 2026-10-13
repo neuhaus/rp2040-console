@@ -56,9 +56,9 @@ list(APPEND SRCS
         sys/share/pmatchregex.c)
 
 # The data files are Tamp-compressed and collected into one archive by
-# build.py, so the volume carries `nhdata` plus the one file NetHack opens
-# outside the library (`symbols`, read through fopen_datafile).  Keeping
-# them separate would cost a 2 KB FAT cluster per file.
+# build.py, so the volume carries `nhdata` alone.  Keeping them separate
+# would cost a 2 KB FAT cluster per file, and `symbols` is in the archive
+# too (the port serves its stdio FILE* from the librarian).
 rp2040_console_game(NAME nethack ${_restart_option}
         ROOT ${CMAKE_CURRENT_SOURCE_DIR}/dat
         RENAMES panic=nh_panic
@@ -67,11 +67,11 @@ rp2040_console_game(NAME nethack ${_restart_option}
                      ${CMAKE_CURRENT_SOURCE_DIR}/tamp
         LEGACY_C LEGACY_TIME32
         ENV ${_game_env}
-        DATA_FILES symbols nhdata
+        DATA_FILES nhdata
         EMPTY_FILES record perm logfile xlogfile
         DATA_DIRS save
         LISTDIR save
-        FS_OFFSET 0x188000 FS_SIZE 0x78000
+        FS_OFFSET 0x17D000 FS_SIZE 0x83000
         HEAP_END 0x2003c000 STACK_RESERVE 24576)
 target_compile_options(nethack PRIVATE -Oz -fsigned-char
         -fno-unwind-tables -fno-asynchronous-unwind-tables)

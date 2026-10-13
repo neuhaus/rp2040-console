@@ -18,15 +18,14 @@ REPO = 'https://github.com/NetHack/NetHack.git'
 DEFAULT_BANNER = 'RP2040 Console ready.'
 
 # Files NetHack reads through the data librarian (dlb_*), in the order they
-# are packed.  `symbols` is not here: NetHack opens it through
-# fopen_datafile(), i.e. plain stdio, so it ships uncompressed.  `tribute`
-# is not here either: its compressed form is the difference between the
-# volume fitting and not, and it is the least of what the data library
-# carries.
+# are packed.  `symbols` is here even though NetHack opens it with plain
+# stdio: the port backs that FILE* with the librarian (see port/nhdlb.c
+# nhdlb_memopen), so it compresses like the rest.  `tribute` is not packed:
+# it is the least of what the library carries and would not fit.
 DATA_LIBRARY = (
     'bogusmon', 'cmdhelp', 'data', 'dungeon', 'engrave', 'epitaph', 'help',
     'hh', 'history', 'keyhelp', 'license', 'opthelp', 'options', 'oracles',
-    'quest.dat', 'rumors', 'wizhelp',
+    'quest.dat', 'rumors', 'symbols', 'wizhelp',
 )
 
 

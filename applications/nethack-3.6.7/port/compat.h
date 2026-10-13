@@ -26,6 +26,11 @@
 #define E extern
 #define SIG_RET_TYPE void (*)(int)
 
+/* The data librarian can present a compressed entry as a stdio FILE*; the
+ * symbol-set reader wants stdio rather than the dlb_* calls.  Implemented in
+ * port/nhdlb.c. */
+FILE *nhdlb_memopen(const char *name);
+
 /* NetHack's files.c sizes a path buffer with PATH_MAX.  Suppressing
  * system.h drops whatever header used to bring it in; newlib's <limits.h>
  * does not define it either. */
