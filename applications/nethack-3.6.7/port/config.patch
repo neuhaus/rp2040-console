@@ -1,0 +1,142 @@
+diff -ruN pristine/include/config.h edited/include/config.h
+--- pristine/include/config.h	2023-02-15 22:52:57.000000000 +0100
++++ edited/include/config.h	2026-10-13 16:28:11.265065133 +0200
+@@ -197,8 +197,10 @@
+ #endif
+ 
+ #ifndef SYSCF
+-#define SYSCF                /* use a global configuration */
+-#define SYSCF_FILE "sysconf" /* global configuration is in a file */
++/* pico-bare: a sysconf file is mandatory when SYSCF is defined, and
++ * the board ships none.  Compile-time defaults are used instead. */
++/* #define SYSCF */                /* use a global configuration */
++/* #define SYSCF_FILE "sysconf" */ /* global configuration is in a file */
+ #endif
+ 
+ #ifndef GDBPATH
+@@ -263,8 +265,9 @@
+ 
+ #if defined(UNIX) && !defined(ZLIB_COMP) && !defined(COMPRESS)
+ /* path and file name extension for compression program */
+-#define COMPRESS "/usr/bin/compress" /* Lempel-Ziv compression */
+-#define COMPRESS_EXTENSION ".Z"      /* compress's extension */
++/* pico-bare: no external compressor exists on the board. */
++/* #define COMPRESS "/usr/bin/compress" */ /* Lempel-Ziv compression */
++/* #define COMPRESS_EXTENSION ".Z" */      /* compress's extension */
+ /* An example of one alternative you might want to use: */
+ /* #define COMPRESS "/usr/local/bin/gzip" */ /* FSF gzip compression */
+ /* #define COMPRESS_EXTENSION ".gz" */       /* normal gzip extension */
+@@ -311,7 +314,7 @@
+  *      a tar-like file, thus making a neater installation.  See *conf.h
+  *      for detailed configuration.
+  */
+-/* #define DLB */ /* not supported on all platforms */
++#define DLB /* pico-bare: data files live in one Tamp-compressed archive */
+ 
+ /*
+  *      Defining REPRODUCIBLE_BUILD causes 'util/makedefs -v' to construct
+@@ -340,7 +343,8 @@
+  *      died due to program or system crashes to be resumed from the point
+  *      of the last level change, after running a utility program.
+  */
+-#define INSURANCE /* allow crashed game recovery */
++/* pico-bare: no recovery utility, and FAT is not power-loss safe. */
++/* #define INSURANCE */ /* allow crashed game recovery */
+ 
+ #ifndef MAC
+ #define CHDIR /* delete if no chdir() available */
+@@ -352,7 +356,7 @@
+  * otherwise it will be the current directory.
+  */
+ #ifndef HACKDIR
+-#define HACKDIR "/usr/games/lib/nethackdir"
++#define HACKDIR "/" /* pico-bare: playground is the volume root */
+ #endif
+ 
+ /*
+diff -ruN pristine/include/unixconf.h edited/include/unixconf.h
+--- pristine/include/unixconf.h	2023-02-15 22:52:57.000000000 +0100
++++ edited/include/unixconf.h	2026-10-13 16:28:11.257065309 +0200
+@@ -34,7 +34,7 @@
+ /* define any of the following that are appropriate */
+ #define SVR4           /* use in addition to SYSV for System V Release 4 */
+                        /* including Solaris 2+ */
+-#define NETWORK        /* if running on a networked system */
++/* #define NETWORK */  /* if running on a networked system */
+                        /* e.g. Suns sharing a playground through NFS */
+ /* #define SUNOS4 */   /* SunOS 4.x */
+ #ifdef __linux__
+@@ -49,7 +49,7 @@
+                         * job control (note that AIX is SYSV otherwise)
+                         * Also define this for AIX 3.2 */
+ 
+-#define TERMINFO       /* uses terminfo rather than termcap */
++/* #define TERMINFO */ /* uses terminfo rather than termcap */
+                        /* Should be defined for most SYSV, SVR4 (including
+                         * Solaris 2+), HPUX, and Linux systems.  In
+                         * particular, it should NOT be defined for the UNIXPC
+@@ -60,8 +60,8 @@
+                         * and/or X11 color.  Note:  if you get compiler
+                         * warnings about 'has_colors()' being implicitly
+                         * declared, uncomment NEED_HAS_COLORS_DECL below. */
+-#define POSIX_JOB_CONTROL /* use System V / Solaris 2.x / POSIX job control
+-                           * (e.g., VSUSP) */
++/* #define POSIX_JOB_CONTROL */ /* use System V / Solaris 2.x / POSIX job
++                           * control (e.g., VSUSP) */
+ #define POSIX_TYPES /* use POSIX types for system calls and termios */
+                     /* Define for many recent OS releases, including
+                      * those with specific defines (since types are
+@@ -99,8 +99,8 @@
+  *              Ralf Brown, 7/26/89 (from v2.3 hack of 10/10/88)
+  */
+ 
+-/* #define NO_FILE_LINKS */                       /* if no hard links */
+-/* #define LOCKDIR "/usr/games/lib/nethackdir" */ /* where to put locks */
++#define NO_FILE_LINKS                          /* if no hard links */
++#define LOCKDIR "/"                            /* where to put locks */
+ 
+ /*
+  * If you want the static parts of your playground on a read-only file
+diff -ruN pristine/sys/unix/unixmain.c edited/sys/unix/unixmain.c
+--- pristine/sys/unix/unixmain.c	2023-02-15 22:52:57.000000000 +0100
++++ edited/sys/unix/unixmain.c	2026-10-13 16:28:11.257065309 +0200
+@@ -12,6 +12,7 @@
+ #include <sys/stat.h>
+ #include <signal.h>
+ #include <pwd.h>
++#include <sys/random.h>
+ #ifndef O_RDONLY
+ #include <fcntl.h>
+ #endif
+@@ -779,23 +780,23 @@
+ sys_random_seed()
+ {
+     unsigned long seed = 0L;
+-    unsigned long pid = (unsigned long) getpid();
+     boolean no_seed = TRUE;
+-#ifdef DEV_RANDOM
+-    FILE *fptr;
+ 
+-    fptr = fopen(DEV_RANDOM, "r");
+-    if (fptr) {
+-        fread(&seed, sizeof (long), 1, fptr);
++    /*
++     * pico-bare: there is no /dev/urandom on the board.  The platform's
++     * getentropy() mixes the RP2040 hardware RNG into the ring oscillator,
++     * which is a real seed; fall back to the old weak one only if it fails.
++     */
++    if (getentropy(&seed, sizeof seed) == 0) {
+         has_strong_rngseed = TRUE;  /* decl.c */
+         no_seed = FALSE;
+-        (void) fclose(fptr);
+     } else {
+         /* leaves clue, doesn't exit */
+         paniclog("sys_random_seed", "falling back to weak seed");
+     }
+-#endif
+     if (no_seed) {
++        unsigned long pid = (unsigned long) getpid();
++
+         seed = (unsigned long) getnow(); /* time((TIME_type) 0) */
+         /* Quick dirty band-aid to prevent PRNG prediction */
+         if (pid) {

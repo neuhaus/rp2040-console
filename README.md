@@ -52,6 +52,9 @@ sh applications/hello/build.sh
 python3 applications/nethack-3.1.3/build.py
 # Or use an existing upstream Git checkout
 python3 applications/nethack-3.1.3/build.py --source /path/to/nethack
+
+# NetHack 3.6.7; same host requirements, data volume is Tamp-compressed
+python3 applications/nethack-3.6.7/build.py
 ```
 
 NetHack also needs a 32-bit host compiler, Bison and Flex. See the

@@ -10,6 +10,7 @@ directory. These scripts build images; they do not flash a device.
 | [Hello](hello/README.md) | `sh applications/hello/build.sh` | Included minimal terminal example |
 | [restoHack](restohack/README.md) | Manual CMake manifest; existing reference instructions | Hack 1.0.3 restoration |
 | [NetHack 3.1.3](nethack-3.1.3/README.md) | `python3 applications/nethack-3.1.3/build.py` | Pinned official historical commit |
+| [NetHack 3.6.7](nethack-3.6.7/README.md) | `python3 applications/nethack-3.6.7/build.py` | Pinned official release; Tamp-compressed data |
 
 ## Common prerequisites
 

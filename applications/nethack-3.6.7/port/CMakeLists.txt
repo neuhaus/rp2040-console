@@ -1,0 +1,76 @@
+cmake_minimum_required(VERSION 3.13)
+if(NOT RP2040_CONSOLE_DIR)
+    message(FATAL_ERROR "Set RP2040_CONSOLE_DIR to the console checkout")
+endif()
+include(${RP2040_CONSOLE_DIR}/pico_sdk_import.cmake)
+project(nethack367 C CXX ASM)
+set(CMAKE_C_STANDARD 11)
+option(NETHACK_SOFT_REBOOT "Restart the game while preserving the USB console" OFF)
+set(_restart_option)
+if(NETHACK_SOFT_REBOOT)
+    set(_restart_option SOFT_REBOOT)
+endif()
+
+# NetHack startup options for this image, handed to the game as
+# NETHACKOPTIONS.  The recipe ships none: an empty value keeps upstream's
+# defaults, and choices personal to a build (a symbol set, a keyboard layout)
+# are passed per build rather than committed.  build.py sets this from
+# --nethack-options, e.g. "symset:DECgraphics,number_pad:-1".
+set(NETHACK_OPTIONS "" CACHE STRING
+        "NETHACKOPTIONS baked into the image; empty for upstream defaults")
+
+set(_game_env TERM=xterm HOME=/ USER=player)
+if(NETHACK_OPTIONS)
+    list(APPEND _game_env "NETHACKOPTIONS=${NETHACK_OPTIONS}")
+endif()
+
+include(${RP2040_CONSOLE_DIR}/cmake/rp2040-console.cmake)
+
+# HACKCSRC is exactly every src/*.c.  src/vis_tab.c is generated there by
+# `makedefs -z` before this configure runs, so the glob picks it up too.
+# src/dlb.c is the recipe's Tamp-backed data librarian, copied over the
+# stock one by build.py.
+file(GLOB SRCS src/*.c win/tty/*.c)
+list(APPEND SRCS
+        sys/unix/unixmain.c
+        sys/unix/unixunix.c
+        sys/unix/unixres.c
+        sys/share/unixtty.c
+        sys/share/ioctl.c
+        sys/share/pmatchregex.c)
+
+# The data files are Tamp-compressed and collected into one archive by
+# build.py, so the volume carries `nhdata` plus the one file NetHack opens
+# outside the library (`symbols`, read through fopen_datafile).  Keeping
+# them separate would cost a 2 KB FAT cluster per file.
+rp2040_console_game(NAME nethack ${_restart_option}
+        ROOT ${CMAKE_CURRENT_SOURCE_DIR}/dat
+        RENAMES panic=nh_panic
+        SOURCES ${SRCS}
+        INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
+                     ${CMAKE_CURRENT_SOURCE_DIR}/tamp
+        LEGACY_C LEGACY_TIME32
+        ENV ${_game_env}
+        DATA_FILES symbols nhdata
+        EMPTY_FILES record perm logfile
+        DATA_DIRS save
+        FS_OFFSET 0x184000 FS_SIZE 0x7C000
+        HEAP_END 0x2003c000 STACK_RESERVE 24576)
+target_compile_options(nethack PRIVATE -Oz -fsigned-char
+        -fno-unwind-tables -fno-asynchronous-unwind-tables)
+target_link_options(nethack PRIVATE --specs=nano.specs)
+set_property(SOURCE ${SRCS} APPEND PROPERTY COMPILE_OPTIONS -include ${CMAKE_CURRENT_SOURCE_DIR}/compat.h)
+target_sources(nethack PRIVATE platform.c)
+
+# The Tamp decompressor, too small to notice in the flash budget and small
+# enough in RAM to stream one data file at a time.  It is deliberately not
+# listed in SOURCES: that would drag the platform's prefix header (which
+# renames getchar and friends) and NetHack's compat.h into a third-party
+# library.
+#
+# TAMP_STREAM=0 drops the convenience read/write workers, which this port
+# does not use.  Extended compression is the library default.
+target_sources(nethack PRIVATE tamp/common.c tamp/decompressor.c)
+set_property(SOURCE tamp/common.c tamp/decompressor.c APPEND PROPERTY
+        COMPILE_DEFINITIONS TAMP_STREAM=0)
+
