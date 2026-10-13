@@ -30,13 +30,26 @@ DATA_LIBRARY = (
 )
 
 
-def window_bits(path):
-    """Window size to compress one data file with.
+def window_bits(packer, path):
+    """Window size that packs one data file smallest.
 
-    The level files are tiny, and a long window costs distance bits without
-    ever finding a longer match.  The big text files do benefit.
+    Tamp's ratio is not monotonic in the window: the big text files keep
+    finding longer matches with a wider window, while level files are small
+    and repetitive enough that a wider window's longer distance encoding
+    costs more than it saves.  Probe a few sizes and keep the smallest.  The
+    window is recorded in the stream header, so the decompressor reads it
+    back without the archive having to store it per entry.
     """
-    return 10 if path.stat().st_size < 8192 else 12
+    probe = path.parent / '.nhdata-window-probe'
+    best = None
+    for bits in (10, 11, 12, 13, 14, 15):
+        subprocess.run([str(packer), str(probe), 'probe', str(bits), str(path)],
+                       check=True, stdout=subprocess.DEVNULL)
+        size = probe.stat().st_size
+        if best is None or size < best[1]:
+            best = (bits, size)
+    probe.unlink()
+    return best[0]
 
 
 def main():
@@ -180,7 +193,7 @@ def main():
         path = dat / name
         if not path.exists():
             parser.error('missing data file: %s' % path)
-        pack_args += [name, str(window_bits(path)), path]
+        pack_args += [name, str(window_bits(work / 'tamp_pack', path)), path]
     run(pack_args)
     check_args = [work / 'tamp_check', dat / 'nhdata']
     for name in library:

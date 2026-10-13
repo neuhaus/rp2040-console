@@ -20,10 +20,18 @@ So the read-only data is compressed, which is what makes the port fit:
   descriptions, `quest.dat`, the encyclopedia `data`, rumors, oracles, the help
   screens, `bogusmon`/`engrave`/`epitaph`, `options`) is compressed with
   [Tamp](https://github.com/BrianPugh/tamp), whose decoder is about 2 KB of
-  code and needs only a 1-4 KB window per open file.
+  code and needs only a 1-32 KB window per open file. The window size is chosen
+  per file (see below) and recorded in each stream's header, so the reader
+  sizes its buffer from the stream.
 - The files are collected into a single archive, `nhdata`, rather than left
   separate. A FAT volume rounds each file up to a whole cluster; in one file
   they cost one file's worth of slack.
+- The window is not a fixed compromise. Tamp's ratio is not monotonic in the
+  window: the big text files keep finding longer matches with a wider window,
+  but level files are small and repetitive enough that a wide window's longer
+  distance encoding costs more than it saves. `build.py` probes a few sizes per
+  file and keeps the smallest, which both shrinks the archive and lets the
+  small level files use (and so allocate) the *smallest* window.
 - The recipe defines `DLB` and replaces `src/dlb.c`, so NetHack's existing
   `dlb_fopen`/`dlb_fread`/`dlb_fseek` calls land on a Tamp streaming reader.
   Seeking is emulated by decoding and discarding; a backward seek restarts the
@@ -31,7 +39,7 @@ So the read-only data is compressed, which is what makes the port fit:
   files are small enough that this is cheaper than the flash it saves.
 
 The 137 files packed into `nhdata` total **922,752 bytes (about 901 KB)**
-uncompressed. Tamp brings them to about **353 KB** (a ratio near 0.39), plus a
+uncompressed. Tamp brings them to about **334 KB** (a ratio near 0.37), plus a
 3,848-byte header and directory. Only the compressed form fits: uncompressed as
 separate files the same data would not fit on the volume alongside the
 firmware, and even a single uncompressed archive would be larger than what is
@@ -165,8 +173,8 @@ Default outputs are under `build/nethack-3.6.7/hardware/`:
 The volume holds `nhdata` (the compressed library), `symbols` (the one data file
 NetHack opens through plain stdio rather than the librarian), empty `record`,
 `perm`, `logfile` and `xlogfile` (NetHack locks and appends to all four, and
-`lock_file()` opens the file itself), and a `save` directory. About 380 KB of
-the 480 KB is used, leaving about **90 KB** for the levels a game has visited.
+`lock_file()` opens the file itself), and a `save` directory. About 370 KB of
+the 480 KB is used, leaving about **109 KB** for the levels a game has visited.
 The volume is FAT12 with 512-byte clusters, so the many small level files cost
 almost no slack.
 
