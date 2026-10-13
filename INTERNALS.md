@@ -264,8 +264,8 @@ used to do; output goes out whichever way the program chose to reach it.
 built-in description; `ioctl()` answers `TIOCGWINSZ` and refuses the rest.
 
 **Files.** A POSIX descriptor layer (`open`, `read`, `write`, `lseek`, `close`,
-`creat`, `stat`, `fstat`, `unlink`, `link`, `access`, `chdir`, `flock`) over
-FatFs, backed by a region of the program's own flash, with an SD card as a
+`creat`, `stat`, `fstat`, `unlink`, `link`, `access`, `chdir`, `flock`, `fcntl`)
+over FatFs, backed by a region of the program's own flash, with an SD card as a
 fallback. See [Filesystem](#filesystem).
 
 **Environment.** `getenv`, `setenv`, `unsetenv` over a table the manifest
@@ -312,12 +312,13 @@ one-line include of. They are found through the include path, so `#include
 that already works: the moment this directory competes with a real newlib header,
 bugs stop being about the port and start being about which of two headers won.
 
-**The libc calls that are missing, defined rather than stubbed.** `flock()` that
-always grants, because there is one program and it is not a lie; `ioctl()` that
-answers the one request with a true answer; and the process surface left absent on
-purpose - newlib declares `fork()` but it resolves through to `_fork_r`, which
-nothing in this toolchain defines, so a program that reaches for a subprocess stops
-at link time where somebody will notice rather than running at runtime with a
+**The libc calls that are missing, defined rather than stubbed.** `flock()` and
+`fcntl()` that always grant, because there is one program and it is not a lie;
+`ioctl()` that answers the one request with a true answer; and the process
+surface left absent on purpose - newlib declares `fork()` but it resolves
+through to `_fork_r`, which nothing in this toolchain defines, so a program
+that reaches for a subprocess stops at link time where somebody will notice
+rather than running at runtime with a
 child process that cannot exist.
 
 **`_write()` routing descriptors 1 and 2 to the console, and stdio unbuffered.**

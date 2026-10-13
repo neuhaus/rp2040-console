@@ -16,6 +16,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <string.h>
 #include <time.h>
@@ -471,6 +472,50 @@ int flock(int fd, int operation)
     }
 
     return 0;
+}
+
+/*
+ * POSIX advisory locks, the fcntl() counterpart of flock() above.  NetHack's
+ * UNIX code takes an F_WRLCK on its "perm" file for the duration of a game;
+ * with one program there is nobody to conflict with, so granting it is the
+ * honest answer rather than a stub.  F_GETLK reports the region unlocked.
+ *
+ * Getting this right matters more than it looks.  If fcntl() fails, NetHack
+ * falls back to creating <file>_lock files; those survive a crash or a power
+ * cut on a FAT volume and would then refuse to start the next game until the
+ * volume was rewritten from a host.  An advisory lock, granted here, leaves
+ * nothing behind.
+ */
+int fcntl(int fd, int cmd, ...)
+{
+    va_list ap;
+
+    if (fd < 0 || fd >= MAX_OPEN_FILES || !open_files[fd].used) {
+        errno = EBADF;
+        return -1;
+    }
+
+    va_start(ap, cmd);
+    switch (cmd) {
+    case F_GETLK: {
+        struct flock *fl = va_arg(ap, struct flock *);
+
+        /* Nothing else can hold a lock, so no lock can conflict. */
+        if (fl != NULL)
+            fl->l_type = F_UNLCK;
+        va_end(ap);
+        return 0;
+    }
+    case F_SETLK:
+    case F_SETLKW:
+        (void)va_arg(ap, struct flock *);
+        va_end(ap);
+        return 0;
+    default:
+        va_end(ap);
+        errno = EINVAL;
+        return -1;
+    }
 }
 
 long lseek(int fd, long offset, int whence)
