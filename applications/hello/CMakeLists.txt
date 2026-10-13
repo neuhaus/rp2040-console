@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.13)
+get_filename_component(RP2040_CONSOLE_DIR "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+include(${RP2040_CONSOLE_DIR}/pico_sdk_import.cmake)
+project(console_hello C CXX ASM)
+include(${RP2040_CONSOLE_DIR}/cmake/rp2040-console.cmake)
+rp2040_console_game(NAME hello SOURCES main.c ENV TERM=xterm EMPTY_FILES scores)
