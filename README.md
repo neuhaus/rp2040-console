@@ -60,6 +60,11 @@ produces the data volume, and both are flashed in either order. The arguments:
 | `HEAP_END` | top of the heap; see the memory map below |
 | `COLS`, `ROWS` | what the terminal reports its size as (default 80x24) |
 | `LEGACY_C` | silence the diagnostics that pre-ANSI sources provoke |
+| `LEGACY_TIME32` | checked 32-bit time API for program sources |
+| `SOFT_REBOOT` | restart a single-threaded C program while retaining USB/platform state |
+| `SYSTEM_HEADERS` | native declarations to preload before program renames |
+| `FLASH_SIZE` | physical flash capacity shared by linker and data volume |
+| `STACK_RESERVE` | minimum space above `HEAP_END`, including SDK scratch RAM |
 | `DEFINES` | any extra preprocessor definitions the program wants |
 | `RENAMES` | `name=replacement`, for a name in the program that clashes with something else in the link |
 
@@ -67,6 +72,197 @@ Cache variables: `RP2040_CONSOLE_FS_OFFSET` (default `0x180000`),
 `RP2040_CONSOLE_FS_SIZE` (default 512KB), `RP2040_CONSOLE_COLS`,
 `RP2040_CONSOLE_ROWS`, and the options `RP2040_CONSOLE_IO_TRACE`,
 `RP2040_CONSOLE_UART_STDIN` and `RP2040_CONSOLE_CLOCK_PROMPT`.
+
+### Compatibility options
+
+`LEGACY_TIME32` is an opt-in manifest flag for programs written around signed
+32-bit Unix seconds (including old `long` time variables). The program's
+`time_t`, `time`, `localtime`, `gmtime`, their `_r` variants, `ctime`, `mktime`
+and `difftime` use checked adapters. Native libc, SDK and platform code keep
+their original ABI; `struct stat`, `struct timeval` and other pre-included
+system structs retain native timestamp fields. Values outside 1901..2038
+return `-1` with `errno = EOVERFLOW`; `time(out)` leaves `out` unchanged on
+range failure. `rp2040_native_time_t` names the original type if needed.
+This flag does not convert every OS time API or an application's binary files.
+
+```cmake
+rp2040_console_game(
+    NAME mygame SOURCES ${SRCS}
+    INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
+    LEGACY_TIME32
+    RENAMES panic=mygame_panic
+    SYSTEM_HEADERS hardware/watchdog.h
+    FLASH_SIZE 2097152
+    FS_OFFSET 0x100000 FS_SIZE 1048576
+    HEAP_END 0x2003c000 STACK_RESERVE 24576
+)
+```
+
+The prefix is applied to program C/C++ sources in both `SOURCES` and
+`GENERATED`, never to SDK, engine or FatFs sources. It reads libc and
+`pico/stdlib.h` declarations before applying `RENAMES`. Use `SYSTEM_HEADERS`
+for additional native headers that declare a conflicting name or use native
+`time_t` in their ABI. Renames remain explicit: a program's `panic` need not
+have the SDK's signature or meaning. Options are scoped to the target even
+when the same source is compiled into multiple programs.
+
+Quoted program headers use the program's `INCLUDE_DIRS` first (`-iquote`);
+angle-bracket system includes continue to prefer platform compatibility
+headers. This lets a program keep its own `"termcap.h"` while the platform
+uses `<termcap.h>`. Program include directories do not leak into SDK/engine
+translation units. Each target has its own generated environment/rename
+headers and `<name>-volume` target; `volume` builds all declared volumes.
+
+`cfgetispeed`, `cfgetospeed`, `cfsetispeed`, `cfsetospeed` and `cfsetspeed`
+report/store the small `B*` codes, not numeric bits per second. USB CDC has no
+physical baudrate. Baud bits do not overlap the character-size flags. Input
+speed zero follows output speed; unsupported speed codes return `EINVAL`.
+
+The single-user surface reports uid/gid zero, but invents no login or password
+database: `getlogin`, `getpwuid` and `getpwnam` return NULL with `ENOENT`.
+`chmod`/`fchmod` validate existence/descriptors without changing Unix permission
+bits, which FatFs cannot represent. `umask` remembers and returns its previous
+API value; it cannot enforce FAT permissions. There are still no subprocesses,
+job control or OS accounts.
+
+### Build and data checks
+
+The build now fails if firmware overlaps the FAT region, the volume exceeds
+`FLASH_SIZE`, or static RAM, heap and stack bounds collide. `STACK_RESERVE`
+requires at least that many bytes above the heap, including SDK scratch RAM;
+it does not measure peak stack use. The build prints actual firmware, static
+RAM, heap and reserve sizes. `FLASH_SIZE` defaults to the SDK/board selection
+(or 2 MB); the target's linker flash region and volume manifest use the same
+capacity. The FAT region must have positive, 4 KB-aligned offset and size.
+Normal builds keep `PICO_COPY_TO_RAM=0` (XIP).
+
+Host data generators can be registered without accidentally using the ARM
+compiler:
+
+```cmake
+rp2040_console_host_tool(
+    NAME makedata HOST_CC /path/to/native-compiler-wrapper
+    SOURCES tools/makedata.c
+    INCLUDE_DIRS include
+    COMPILE_OPTIONS -std=gnu89
+    DEPENDS include/data-format.h
+    # RUNNER /path/to/qemu-i386   # only when required by the host binary
+)
+add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated.c
+    COMMAND ${makedata_COMMAND} ${CMAKE_CURRENT_BINARY_DIR}/generated.c
+    DEPENDS ${makedata_DEPENDS} VERBATIM)
+```
+
+The helper exposes a build target `makedata`, command list `makedata_COMMAND`,
+and dependency list `makedata_DEPENDS` (target plus binary file). Use that list
+so a changed generator reruns its consumers; add relevant headers/data inputs. Choose
+a host compiler/wrapper and runner matching the data format. A 64-bit host
+`long` is not interchangeable with a 32-bit target `long`.
+`tools/check-layout.py` compares `layout_*[sizeof(type)]` and
+`offset_*[offsetof(type, field)+1]` probe symbols from separately compiled host
+and target objects. Empty probes or differences fail. This checks sizes and
+field offsets; endianness, bitfield encoding and semantics still need attention.
+
+Volume manifests accept the original whitespace format and tab-separated
+fields for paths containing spaces. Required files keep their declared target
+names; parent directories are created, and missing files fail the build.
+Parallel volume builds have independent staging directories. Manifest paths
+cannot contain tabs, newlines, `#` or `|`; volume destinations are relative
+paths without `..` components.
+
+### Regression checks
+
+With host C compiler, Python, dosfstools/mtools, SDK and ARM tools available:
+
+```sh
+sh tests/run.sh
+cmake -S tests/integration -B build/integration -G Ninja -DPICO_SDK_PATH=...
+cmake --build build/integration --parallel 4
+cmake --build build/integration --target volume
+```
+
+The host checks cover 32-bit time boundaries, output-pointer overwrite guards,
+terminal speed/flag state, rejected memory layouts, incompatible/empty data
+probes, and renamed/nested volume files with spaces. The ARM fixture builds a
+native host generator and two programs, shares a source between native and
+legacy time targets, verifies native system struct ABIs, and checks `panic`
+renames and quoted-header resolution in generated sources.
+
+By default program termination still reboots. The restart-key wait polls
+without blocking, so its existing timeout can expire. Optional soft reboot
+is described below.
+Physical USB, flash writes and long-game heap/stack peaks need board testing.
+
+### Optional soft reboot
+
+Enable it explicitly in the program manifest:
+
+```cmake
+rp2040_console_game(
+    NAME mygame SOURCES ${SRCS}
+    SOFT_REBOOT
+    # All mutable program C units belong in SOURCES/GENERATED.
+    HEAP_END 0x2003c000 STACK_RESERVE 24576
+)
+```
+
+The default is still a hardware reboot. In soft mode, normal return from
+`main()`, `exit()`, `_exit()` and `_Exit()` enter a session boundary. The
+platform initializes USB, its alarms, storage and the clock once, then starts
+new program sessions without deinitializing or reconnecting USB. After the
+usual end-of-game key prompt, pending input is discarded and terminal modes
+are restored. Session time continues and is persisted; each session gets a
+new pid. A nonzero exit during the initial three-second grace period still
+stops instead of looping on a startup error; a quick successful exit can
+restart normally.
+
+A compiler launcher retags only declared program `.data`/`.bss` objects. A
+checked SDK linker override keeps those ranges within normal startup data/BSS
+and exposes their original XIP initialization image. Before each call, only
+program initialized globals and zero-initialized globals are restored. Platform
+and USB globals remain live. A `setjmp` boundary unwinds exited program stack
+frames; it does not reset the entire RAM or the C allocator's shared state.
+
+Each session uses its own newlib reentrancy context and its own standard
+streams. `atexit` handlers execute in reverse order, and normal exit flushes
+and closes remaining program streams while the caller's stack is still alive.
+`_exit`/`_Exit` skip handlers and discard buffered stdio output. Closing the
+program's standard streams never tears down USB or the platform streams.
+Newlib's reentrant malloc/calloc/realloc/free are wrapped to reclaim outstanding
+program and libc allocations, including leaked objects, without reclaiming
+platform allocations. Allocation tracking consumes additional heap space.
+Process-global timezone/locale caches retain platform ownership; environment,
+locale, terminal modes, umask and working directory are reset between sessions.
+A strong `_sbrk` now enforces the manifest's actual `HEAP_END` in both modes.
+
+**Supported profile:** single-threaded C terminal programs on RP2040, XIP,
+GCC/newlib (validated with SDK 2.3.1, newlib 4.5.0). List every mutable program
+translation unit in `SOURCES`/`GENERATED`; stateful precompiled libraries or
+application units added through `target_sources` cannot be reset automatically.
+C++, TLS, constructors, custom writable sections, core-1 work, and program
+IRQ/timer/peripheral callbacks surviving exit are not supported. The build
+rejects unsupported declared source types, common symbols and writable sections.
+The launcher preserves an existing compiler launcher such as ccache.
+
+Soft reboot is normal-termination cleanup, not recovery from memory corruption
+or a crash. A libc exit originating in a precompiled library bypasses the
+program-only macro and follows the hardware reboot path. A cleanup failure
+falls back to hardware reboot. Physical cable/host disconnection cannot be
+prevented; keeping the USB driver alive still requires a board test.
+
+Run the lifecycle test with ARM tools and qemu-user available:
+
+```sh
+bash tests/soft/run.sh
+```
+
+It executes the actual ARM/newlib session implementation via a Linux syscall
+bridge under `qemu-arm` (no Pico/USB emulation): 60 sessions exercise normal
+return, exit, immediate exit, nested exits from handlers, program standard
+stream closure, caller-stack-backed handlers/buffers, global restoration,
+realloc failure, leaked allocations/streams, signals, timezone changes, platform
+state preservation, stable heap high-water and enforced heap growth/shrink bounds.
+The integration fixture also links the Pico backend and separated globals.
 
 What a game needs on the machine doing the building: CMake, `gcc-arm-none-eabi`,
 Pico SDK 2.3.1 or newer (`PICO_SDK_PATH`), and `dosfstools` plus `mtools` for the

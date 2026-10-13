@@ -20,6 +20,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <pwd.h>
 
 #include "clock.h"
 
@@ -68,10 +69,32 @@ unsigned int sleep(unsigned int seconds)
  */
 
 /* newlib declares this as mode_t umask(mode_t), not int. */
+static mode_t previous_mask;
+
+void console_process_reset(void) { previous_mask = 0; }
+
 mode_t umask(mode_t mask)
 {
-    /* Harmless to pretend: no permissions model here. */
-    return mask;
+    mode_t previous = previous_mask;
+    previous_mask = mask & 0777;
+    /* Remember the API state, but FatFs cannot enforce Unix permissions. */
+    return previous;
+}
+
+/* FatFs has no Unix permission bits. Check existence instead of claiming
+ * to change them; uid/gid and ownership are a single-user compatibility API. */
+int chmod(const char *path, mode_t mode)
+{
+    struct stat st;
+    (void)mode;
+    return stat(path, &st);
+}
+
+int fchmod(int fd, mode_t mode)
+{
+    struct stat st;
+    (void)mode;
+    return fstat(fd, &st);
 }
 
 /* --- identity -------------------------------------------------------- */
@@ -107,6 +130,21 @@ int setgid(gid_t gid) { (void)gid; return 0; }
  */
 char *getlogin(void)
 {
+    errno = ENOENT;
+    return NULL;
+}
+
+/* No password database exists. Leave player naming to the program. */
+struct passwd *getpwuid(uid_t uid)
+{
+    (void)uid;
+    errno = ENOENT;
+    return NULL;
+}
+
+struct passwd *getpwnam(const char *name)
+{
+    errno = name == NULL ? EINVAL : ENOENT;
     return NULL;
 }
 

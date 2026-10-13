@@ -32,6 +32,7 @@
 # Usage: mkvolume.sh --manifest FILE --out DIR [--name STEM] [--picotool PATH]
 #
 set -e
+set -f # Manifest names are literal, never shell glob patterns.
 
 MANIFEST=""
 OUTDIR=""
@@ -67,11 +68,20 @@ DIRS=""
 
 # Read the manifest. Trailing comments are stripped; everything else is
 # passed through verbatim so paths keep their spaces.
-strip_comment() {
-    sed -e 's/[ 	#].*$//'
-}
-
-while read -r kind a b rest; do
+TAB=$(printf '\t')
+while IFS= read -r line; do
+    # Generated manifests use tabs so filenames can contain spaces. Keep
+    # accepting the original whitespace-separated manifest format.
+    case "$line" in
+        *"$TAB"*) IFS="$TAB" read -r kind a b rest <<FIELDS
+$line
+FIELDS
+            ;;
+        *) read -r kind a b rest <<FIELDS
+$line
+FIELDS
+            ;;
+    esac
     [ -n "$kind" ] || continue
     case "$kind" in
         label)      LABEL=$a ;;
@@ -95,7 +105,11 @@ while read -r kind a b rest; do
                 echo "       (from a '$kind' entry in $MANIFEST)" >&2
                 exit 1
             }
-            FILES="$FILES|$a|${b:-$(basename "$a")}"
+            case "$a${b}" in
+                *'|'*) echo "error: manifest paths may not contain '|'" >&2; exit 1 ;;
+            esac
+            FILES="$FILES
+$a|${b:-$(basename "$a")}"
             ;;
         empty)
             [ -n "$a" ] && EMPTIES="$EMPTIES|$a"
@@ -121,6 +135,11 @@ fi
 #
 OFFSET_N=$((OFFSET))
 SIZE_N=$((SIZE))
+if [ "$OFFSET_N" -le 0 ] || [ "$SIZE_N" -le 0 ] ||
+   [ $((OFFSET_N % 4096)) -ne 0 ] || [ $((SIZE_N % 4096)) -ne 0 ]; then
+    echo "error: volume offset/size must be positive multiples of 4096" >&2
+    exit 1
+fi
 if [ $((OFFSET_N + SIZE_N)) -gt "$FLASH_BYTES" ]; then
     overrun=$((OFFSET_N + SIZE_N - FLASH_BYTES))
     max=$((FLASH_BYTES - SIZE_N))
@@ -174,7 +193,7 @@ if [ "$TO_FLASH" = yes ]; then
     fi
 fi
 
-WORK=$OUTDIR/volume-staging
+WORK=$OUTDIR/$STEM-volume-staging
 rm -rf "$WORK"
 mkdir -p "$WORK"
 cd "$WORK"
@@ -190,18 +209,27 @@ truncate -s "$SIZE_N" "$IMG"
 
 # --- contents ----------------------------------------------------------
 
+ensure_dir() {
+    case "$1" in
+        ''|.) return ;;
+        /*|..|../*|*/../*|*/..) echo "error: volume paths must be relative without '..'" >&2; exit 1 ;;
+    esac
+    if [ "$(dirname "$1")" != . ]; then
+        ensure_dir "$(dirname "$1")"
+    fi
+    mmd -i "$IMG" "::$1" 2>/dev/null || mdir -i "$IMG" "::$1" >/dev/null
+}
+
 add_file() {
     src=$1
     name=$2
 
     if [ ! -f "$src" ]; then
-        # Not fatal. A game missing one optional data file is degraded, and
-        # it is the game that reports what it could not read, in context, on
-        # the device where it matters.
-        echo "    ! $name: no such file $src" >&2
-        return 0
+        echo "error: required volume file disappeared: $src" >&2
+        return 1
     fi
 
+    ensure_dir "$(dirname "$name")"
     mcopy -i "$IMG" "$src" "::$name"
 
     # mcopy preserves nothing useful here and FAT names are 8.3 unless the
@@ -211,14 +239,10 @@ add_file() {
 
 if [ -n "$FILES" ]; then
     echo "==> adding files"
-    oldifs=$IFS
-    IFS='|'
-    for entry in $FILES; do
-        [ -n "$entry" ] || continue
-        set -- $entry
-        add_file "$1" "$2"
+    printf '%s\n' "$FILES" | while IFS='|' read -r src name; do
+        [ -n "$src" ] || continue
+        add_file "$src" "$name"
     done
-    IFS=$oldifs
 fi
 
 # Empty files, which a game expects an installation to have provided and
@@ -236,9 +260,10 @@ if [ -n "$EMPTIES" ]; then
     IFS='|'
     for name in $EMPTIES; do
         [ -n "$name" ] || continue
-        : > "$name"
-        mcopy -i "$IMG" "$name" "::$name"
-        rm -f "$name"
+        ensure_dir "$(dirname "$name")"
+        : > empty-file
+        mcopy -i "$IMG" empty-file "::$name"
+        rm -f empty-file
         echo "    + $name"
     done
     IFS=$oldifs
@@ -255,7 +280,7 @@ if [ -n "$DIRS" ]; then
     IFS='|'
     for name in $DIRS; do
         [ -n "$name" ] || continue
-        mmd -i "$IMG" "::$name" 2>/dev/null || true
+        ensure_dir "$name"
         echo "    + $name/"
     done
     IFS=$oldifs
