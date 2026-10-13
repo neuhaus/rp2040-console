@@ -22,9 +22,8 @@ So the read-only data is compressed, which is what makes the port fit:
   [Tamp](https://github.com/BrianPugh/tamp), whose decoder is about 2 KB of
   code and needs only a 1-4 KB window per open file.
 - The files are collected into a single archive, `nhdata`, rather than left
-  separate. A FAT volume with a 2 KB cluster size would otherwise round each of
-  the small files up to a whole cluster; in one file they cost one file's worth
-  of slack.
+  separate. A FAT volume rounds each file up to a whole cluster; in one file
+  they cost one file's worth of slack.
 - The recipe defines `DLB` and replaces `src/dlb.c`, so NetHack's existing
   `dlb_fopen`/`dlb_fread`/`dlb_fseek` calls land on a Tamp streaming reader.
   Seeking is emulated by decoding and discarding; a backward seek restarts the
@@ -34,15 +33,30 @@ So the read-only data is compressed, which is what makes the port fit:
 The 137 files packed into `nhdata` total **922,752 bytes (about 901 KB)**
 uncompressed. Tamp brings them to about **353 KB** (a ratio near 0.39), plus a
 3,848-byte header and directory. Only the compressed form fits: uncompressed as
-separate files the same data would occupy about **1,054,720 bytes (about
-1.0 MB)** on the volume once each file is rounded up to a 2 KB cluster
-(131,968 bytes of slack), and even a single uncompressed archive would be
-larger than what is left over after the firmware.
+separate files the same data would not fit on the volume alongside the
+firmware, and even a single uncompressed archive would be larger than what is
+left over after the firmware.
 
 `tribute` is the one data file left out: its compressed form is the difference
 between fitting and not, and it is the least of what the library carries (the
 passages shown when reading a novel, and the death quotes). The game handles
 its absence the way it handles any missing optional data file.
+
+## Saving levels
+
+NetHack keeps one file per level the player has left and re-reads it on return.
+On a volume this size that is the binding constraint on how deep a game can go,
+so level files and save files are compressed with the same Tamp codec as the
+data library. The port keeps upstream's `ZEROCOMP` plumbing -- its option, its
+`SFI1_ZEROCOMP` savefile flag and its `bufon`/`bufoff` raw-front-matter
+protocol -- and swaps only the codec for Tamp, so `src/save.c` and
+`src/restore.c` change only where they do the byte I/O.
+
+Level files drop from about 20-30 KB to about 1.4-8 KB (roughly 8x), so about
+**40 levels** fit in the free space instead of about four. Without this the
+volume filled after a few levels, the level write failed as a short write, and
+NetHack panicked with an empty reason line (the panic save could not be written
+either, so `NH_abort()` ran before the reason was printed).
 
 ## Build
 
@@ -117,16 +131,17 @@ again rather than keeping the previous value.
 
 Default outputs are under `build/nethack-3.6.7/hardware/`:
 
-- `nethack.uf2`: XIP firmware below flash offset `0x184000` (about 1.55 MB).
-- `nethack-volume.uf2`: 496 KB FAT volume at `0x184000`, ending at 2 MB.
+- `nethack.uf2`: XIP firmware below flash offset `0x180000` (about 1.49 MB).
+- `nethack-volume.uf2`: 512 KB FAT12 volume at `0x180000`, ending at 2 MB.
 - `nethack.elf`, `nethack.bin` and `nethack-volume.img`: inspection artifacts.
 
 The volume holds `nhdata` (the compressed library), `symbols` (the one data file
 NetHack opens through plain stdio rather than the librarian), empty `record`,
 `perm`, `logfile` and `xlogfile` (NetHack locks and appends to all four, and
-`lock_file()` opens the file itself), and a `save` directory. About 380 KB of
-the 496 KB is used, leaving the rest for save files; how much a full game needs
-is unmeasured.
+`lock_file()` opens the file itself), and a `save` directory. About 400 KB of
+the 512 KB is used, leaving about **125 KB** for the levels a game has visited.
+The volume is FAT12 with 512-byte clusters, so the many small level files cost
+almost no slack.
 
 The build generates all game data, checks host/ARM sizes and offsets, validates
 firmware/heap/stack bounds, checks FAT with fsck and verifies UF2 addresses and

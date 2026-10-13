@@ -204,8 +204,13 @@ echo "==> creating $IMG (${SIZE_N} bytes, FAT$FATTYPE)"
 rm -f "$IMG"
 truncate -s "$SIZE_N" "$IMG"
 # 512-byte sectors: the flash driver reports that geometry and FatFs has to
-# agree with it.
-"$MKFS" -F "$FATTYPE" -n "$LABEL" -S 512 "$IMG" >/dev/null
+# agree with it.  A small FAT12 volume in flash holds a game's own small
+# state files (NetHack's level files are a few KB each), where 2 KB clusters
+# leave up to 1.5 KB of slack per file; 512-byte clusters avoid that.  Larger
+# volumes, which means an SD card, keep mkfs' size-appropriate default.
+CLUSTER_OPT=
+if [ "$FATTYPE" = 12 ]; then CLUSTER_OPT="-s 1"; fi
+"$MKFS" -F "$FATTYPE" -n "$LABEL" -S 512 $CLUSTER_OPT "$IMG" >/dev/null
 
 # --- contents ----------------------------------------------------------
 

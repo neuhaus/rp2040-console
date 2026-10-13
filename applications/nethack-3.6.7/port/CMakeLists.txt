@@ -63,7 +63,7 @@ rp2040_console_game(NAME nethack ${_restart_option}
         DATA_FILES symbols nhdata
         EMPTY_FILES record perm logfile xlogfile
         DATA_DIRS save
-        FS_OFFSET 0x184000 FS_SIZE 0x7C000
+        FS_OFFSET 0x180000 FS_SIZE 0x80000
         HEAP_END 0x2003c000 STACK_RESERVE 24576)
 target_compile_options(nethack PRIVATE -Oz -fsigned-char
         -fno-unwind-tables -fno-asynchronous-unwind-tables)
@@ -79,7 +79,7 @@ target_sources(nethack PRIVATE platform.c)
 #
 # TAMP_STREAM=0 drops the convenience read/write workers, which this port
 # does not use.  Extended compression is the library default.
-target_sources(nethack PRIVATE tamp/common.c tamp/decompressor.c)
-set_property(SOURCE tamp/common.c tamp/decompressor.c APPEND PROPERTY
+target_sources(nethack PRIVATE tamp/common.c tamp/decompressor.c tamp/compressor.c)
+set_property(SOURCE tamp/common.c tamp/decompressor.c tamp/compressor.c APPEND PROPERTY
         COMPILE_DEFINITIONS TAMP_STREAM=0)
 

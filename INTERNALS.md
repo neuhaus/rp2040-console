@@ -403,6 +403,11 @@ worth stating plainly rather than pretending are obvious:
   files than any property of a flash filesystem.
 - The same image works on an SD card, readable by any operating system.
 
+Small FAT12 volumes in flash are formatted with 512-byte clusters
+(`tools/mkvolume.sh`), so a game that writes many small files -- NetHack keeps a
+few-KB file per level visited -- pays almost no per-file slack. Larger volumes,
+which means an SD card, keep `mkfs`' size-appropriate default.
+
 **The honest cost: FAT is not power-loss safe.** A write interrupted by a reset
 can lose a directory entry or leave a chain inconsistent, and FatFs has no journal
 to recover from. For a score file that is an acceptable loss, and it is what a
@@ -414,9 +419,9 @@ the same two places.
 
 Writes are read-modify-write over 4KB erase blocks (`src/flash_fs.c`), with
 interrupts off during the flash procedure, because executing from flash while it
-is being programmed faults. The default layout uses a 2 MB flash chip, with firmware below 1.5 MB and
-a 512 KB volume above it. Application manifests can choose different bounds;
-NetHack uses firmware below 1 MB and a 1 MB volume.
+is being programmed faults. The default layout uses a 2 MB flash chip, with
+firmware below `0x180000` and a 512 KB volume above it; application manifests can
+choose different bounds, and NetHack uses the default.
 
 ## Memory map
 

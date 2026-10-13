@@ -1,6 +1,5 @@
-diff -ruN pristine/include/config.h edited/include/config.h
---- pristine/include/config.h	2023-02-15 22:52:57.000000000 +0100
-+++ edited/include/config.h	2026-10-13 16:28:11.265065133 +0200
+--- pristine/include/config.h
++++ edited/include/config.h
 @@ -197,8 +197,10 @@
  #endif
  
@@ -26,6 +25,15 @@ diff -ruN pristine/include/config.h edited/include/config.h
  /* An example of one alternative you might want to use: */
  /* #define COMPRESS "/usr/local/bin/gzip" */ /* FSF gzip compression */
  /* #define COMPRESS_EXTENSION ".gz" */       /* normal gzip extension */
+@@ -303,7 +306,7 @@
+  */
+ 
+ /* # define INTERNAL_COMP */ /* defines both ZEROCOMP and RLECOMP */
+-/* # define ZEROCOMP      */ /* Support ZEROCOMP compression */
++# define ZEROCOMP         /* pico-bare: codec is Tamp (src/save.c, src/restore.c) */
+ /* # define RLECOMP       */ /* Support RLECOMP compression  */
+ 
+ /*
 @@ -311,7 +314,7 @@
   *      a tar-like file, thus making a neater installation.  See *conf.h
   *      for detailed configuration.
@@ -54,9 +62,8 @@ diff -ruN pristine/include/config.h edited/include/config.h
  #endif
  
  /*
-diff -ruN pristine/include/unixconf.h edited/include/unixconf.h
---- pristine/include/unixconf.h	2023-02-15 22:52:57.000000000 +0100
-+++ edited/include/unixconf.h	2026-10-13 16:28:11.257065309 +0200
+--- pristine/include/unixconf.h
++++ edited/include/unixconf.h
 @@ -34,7 +34,7 @@
  /* define any of the following that are appropriate */
  #define SVR4           /* use in addition to SYSV for System V Release 4 */
@@ -97,9 +104,8 @@ diff -ruN pristine/include/unixconf.h edited/include/unixconf.h
  
  /*
   * If you want the static parts of your playground on a read-only file
-diff -ruN pristine/sys/unix/unixmain.c edited/sys/unix/unixmain.c
---- pristine/sys/unix/unixmain.c	2023-02-15 22:52:57.000000000 +0100
-+++ edited/sys/unix/unixmain.c	2026-10-13 16:28:11.257065309 +0200
+--- pristine/sys/unix/unixmain.c
++++ edited/sys/unix/unixmain.c
 @@ -12,6 +12,7 @@
  #include <sys/stat.h>
  #include <signal.h>
@@ -140,3 +146,409 @@ diff -ruN pristine/sys/unix/unixmain.c edited/sys/unix/unixmain.c
          seed = (unsigned long) getnow(); /* time((TIME_type) 0) */
          /* Quick dirty band-aid to prevent PRNG prediction */
          if (pid) {
+--- pristine/src/save.c
++++ edited/src/save.c
+@@ -776,133 +776,137 @@
+ }
+ 
+ #ifdef ZEROCOMP
+-/* The runs of zero-run compression are flushed after the game state or a
+- * level is written out.  This adds a couple bytes to a save file, where
+- * the runs could be mashed together, but it allows gluing together game
+- * state and level files to form a save file, and it means the flushing
+- * does not need to be specifically called for every other time a level
+- * file is written out.
++/*
++ * pico-bare: the zero-run codec is replaced by Tamp.  Everything around it
++ * is upstream's: the "zerocomp" name, the SFI1_ZEROCOMP savefile flag, the
++ * bufon/bufoff raw-segment protocol and the flush points.  Each level file,
++ * and the body of a save or bones file, is a single Tamp stream running to
++ * EOF, preceded at most by raw front matter, so one compressor suffices.
+  */
++#include "compressor.h"
+ 
+-#define RLESC '\0' /* Leading character for run of LRESC's */
+-#define flushoutrun(ln) (zerocomp_bputc(RLESC), zerocomp_bputc(ln), ln = -1)
++#define NHTAMP_WIN_BITS 10
++#define NHTAMP_OUTBUF 512
+ 
+-#ifndef ZEROCOMP_BUFSIZ
+-#define ZEROCOMP_BUFSIZ BUFSZ
+-#endif
+-static NEARDATA unsigned char outbuf[ZEROCOMP_BUFSIZ];
+-static NEARDATA unsigned short outbufp = 0;
+-static NEARDATA short outrunlength = -1;
+-static NEARDATA int bwritefd;
+-static NEARDATA boolean compressing = FALSE;
++static TampCompressor nhtamp_comp;
++static unsigned char nhtamp_cwin[1U << NHTAMP_WIN_BITS];
++static unsigned char nhtamp_cout[NHTAMP_OUTBUF];
++static unsigned int nhtamp_cout_len;
++static int nhtamp_cfd;
++static boolean nhtamp_cstarted;
++static boolean nhtamp_compressing;
+ 
+-/*dbg()
++STATIC_OVL void
++nhtamp_cflushout()
+ {
+-    HUP printf("outbufp %d outrunlength %d\n", outbufp,outrunlength);
+-}*/
++    if (nhtamp_cout_len) {
++        unsigned int n = nhtamp_cout_len;
++
++        nhtamp_cout_len = 0;
++        if ((unsigned int) write(nhtamp_cfd, nhtamp_cout, n) != n)
++            panic("cannot write %u bytes to file #%d", n, nhtamp_cfd);
++    }
++}
+ 
+ STATIC_OVL void
+-zerocomp_bputc(c)
+-int c;
+-{
+-#ifdef MFLOPPY
+-    bytes_counted++;
+-    if (count_only)
+-        return;
+-#endif
+-    if (outbufp >= sizeof outbuf) {
+-        (void) write(bwritefd, outbuf, sizeof outbuf);
+-        outbufp = 0;
++nhtamp_cput(buf, n)
++const unsigned char *buf;
++size_t n;
++{
++    while (n) {
++        size_t room = sizeof nhtamp_cout - nhtamp_cout_len;
++        size_t k = (n < room) ? n : room;
++
++        memcpy(nhtamp_cout + nhtamp_cout_len, buf, k);
++        nhtamp_cout_len += (unsigned int) k;
++        buf += k;
++        n -= k;
++        if (nhtamp_cout_len == sizeof nhtamp_cout)
++            nhtamp_cflushout();
++    }
++}
++
++STATIC_OVL void
++nhtamp_cfeed(buf, n)
++const unsigned char *buf;
++size_t n;
++{
++    while (n) {
++        unsigned char out[32];
++        size_t written = 0, consumed = 0;
++        tamp_res res = tamp_compressor_compress(&nhtamp_comp, out, sizeof out,
++                                                &written, buf, n, &consumed);
++
++        if (written)
++            nhtamp_cput(out, written);
++        if (consumed == 0 && written == 0)
++            panic("tamp: compression stalled (%d)", (int) res);
++        buf += consumed;
++        n -= consumed;
++        if (res != TAMP_OK && res != TAMP_OUTPUT_FULL
++            && res != TAMP_INPUT_EXHAUSTED)
++            panic("tamp: compression error %d", (int) res);
+     }
+-    outbuf[outbufp++] = (unsigned char) c;
+ }
+ 
+-/*ARGSUSED*/
+-void STATIC_OVL
++STATIC_OVL void
+ zerocomp_bufon(fd)
+ int fd;
+ {
+-    compressing = TRUE;
+-    return;
++    nhtamp_cfd = fd;
++    nhtamp_compressing = TRUE;
++    nhtamp_cstarted = FALSE;
++    nhtamp_cout_len = 0;
+ }
+ 
+-/*ARGSUSED*/
+ STATIC_OVL void
+ zerocomp_bufoff(fd)
+ int fd;
+ {
+-    if (outbufp) {
+-        outbufp = 0;
+-        panic("closing file with buffered data still unwritten");
+-    }
+-    outrunlength = -1;
+-    compressing = FALSE;
+-    return;
++    (void) fd;
++    nhtamp_compressing = FALSE;
+ }
+ 
+-/* flush run and buffer */
+ STATIC_OVL void
+ zerocomp_bflush(fd)
+-register int fd;
++int fd;
+ {
+-    bwritefd = fd;
+-    if (outrunlength >= 0) { /* flush run */
+-        flushoutrun(outrunlength);
+-    }
+-#ifdef MFLOPPY
+-    if (count_only)
+-        outbufp = 0;
+-#endif
+-
+-    if (outbufp) {
+-        if (write(fd, outbuf, outbufp) != outbufp) {
+-#if defined(UNIX) || defined(VMS) || defined(__EMX__)
+-            if (program_state.done_hup)
+-                nh_terminate(EXIT_FAILURE);
+-            else
+-#endif
+-                zerocomp_bclose(fd); /* panic (outbufp != 0) */
+-        }
+-        outbufp = 0;
++    if (nhtamp_compressing && nhtamp_cstarted) {
++        unsigned char out[64];
++        size_t written = 0;
++
++        (void) tamp_compressor_flush(&nhtamp_comp, out, sizeof out, &written,
++                                     TRUE);
++        if (written)
++            nhtamp_cput(out, written);
+     }
++    nhtamp_cflushout();
+ }
+ 
+ STATIC_OVL void
+ zerocomp_bwrite(fd, loc, num)
+ int fd;
+ genericptr_t loc;
+-register unsigned num;
++unsigned int num;
+ {
+-    register unsigned char *bp = (unsigned char *) loc;
+-
+-    if (!compressing) {
+-#ifdef MFLOPPY
+-        bytes_counted += num;
+-        if (count_only)
+-            return;
+-#endif
+-        if ((unsigned) write(fd, loc, num) != num) {
+-#if defined(UNIX) || defined(VMS) || defined(__EMX__)
+-            if (program_state.done_hup)
+-                nh_terminate(EXIT_FAILURE);
+-            else
+-#endif
+-                panic("cannot write %u bytes to file #%d", num, fd);
++    if (nhtamp_compressing) {
++        if (!nhtamp_cstarted) {
++            TampConf conf;
++
++            memset((genericptr_t) &conf, 0, sizeof conf);
++            conf.window = NHTAMP_WIN_BITS;
++            conf.literal = 8;
++            conf.extended = 1;
++            if (tamp_compressor_init(&nhtamp_comp, &conf, nhtamp_cwin)
++                != TAMP_OK)
++                panic("tamp: compressor init failed");
++            nhtamp_cfd = fd;
++            nhtamp_cstarted = TRUE;
+         }
++        nhtamp_cfeed((const unsigned char *) loc, num);
+     } else {
+-        bwritefd = fd;
+-        for (; num; num--, bp++) {
+-            if (*bp == RLESC) { /* One more char in run */
+-                if (++outrunlength == 0xFF) {
+-                    flushoutrun(outrunlength);
+-                }
+-            } else {                     /* end of run */
+-                if (outrunlength >= 0) { /* flush run */
+-                    flushoutrun(outrunlength);
+-                }
+-                zerocomp_bputc(*bp);
+-            }
+-        }
++        if ((unsigned int) write(fd, loc, num) != num)
++            panic("cannot write %u bytes to file #%d", num, fd);
+     }
+ }
+ 
+@@ -910,12 +914,23 @@
+ zerocomp_bclose(fd)
+ int fd;
+ {
+-    zerocomp_bufoff(fd);
++    if (nhtamp_cstarted) {
++        unsigned char out[64];
++        size_t written = 0;
++
++        (void) tamp_compressor_flush(&nhtamp_comp, out, sizeof out, &written,
++                                     FALSE);
++        if (written)
++            nhtamp_cput(out, written);
++        nhtamp_cstarted = FALSE;
++    }
++    nhtamp_cflushout();
++    nhtamp_compressing = FALSE;
+     (void) nhclose(fd);
+-    return;
+ }
+ #endif /* ZEROCOMP */
+ 
++
+ STATIC_OVL void
+ savelevchn(fd, mode)
+ register int fd, mode;
+--- pristine/src/restore.c
++++ edited/src/restore.c
+@@ -1549,70 +1549,104 @@
+ }
+ 
+ #ifdef ZEROCOMP
+-#define RLESC '\0' /* Leading character for run of RLESC's */
++/* pico-bare: Tamp codec, matching the save side (src/save.c). */
++#include "decompressor.h"
+ 
+-#ifndef ZEROCOMP_BUFSIZ
+-#define ZEROCOMP_BUFSIZ BUFSZ
+-#endif
+-static NEARDATA unsigned char inbuf[ZEROCOMP_BUFSIZ];
+-static NEARDATA unsigned short inbufp = 0;
+-static NEARDATA unsigned short inbufsz = 0;
+-static NEARDATA short inrunlength = -1;
+-static NEARDATA int mreadfd;
++#define NHTAMP_WIN_BITS 10
++#define NHTAMP_INBUF 512
+ 
+-STATIC_OVL int
+-zerocomp_mgetc()
+-{
+-    if (inbufp >= inbufsz) {
+-        inbufsz = read(mreadfd, (genericptr_t) inbuf, sizeof inbuf);
+-        if (!inbufsz) {
+-            if (inbufp > sizeof inbuf)
+-                error("EOF on file #%d.\n", mreadfd);
+-            inbufp = 1 + sizeof inbuf; /* exactly one warning :-) */
+-            return -1;
+-        }
+-        inbufp = 0;
+-    }
+-    return inbuf[inbufp++];
+-}
++static TampDecompressor nhtamp_decomp;
++static unsigned char nhtamp_dwin[1U << NHTAMP_WIN_BITS];
++static unsigned char nhtamp_cin[NHTAMP_INBUF];
++static unsigned int nhtamp_cin_len, nhtamp_cin_pos;
++static boolean nhtamp_dstarted;
+ 
+ STATIC_OVL void
+ zerocomp_minit()
+ {
+-    inbufsz = 0;
+-    inbufp = 0;
+-    inrunlength = -1;
++    nhtamp_cin_len = 0;
++    nhtamp_cin_pos = 0;
++    nhtamp_dstarted = FALSE;
+ }
+ 
+ STATIC_OVL void
+ zerocomp_mread(fd, buf, len)
+ int fd;
+ genericptr_t buf;
+-register unsigned len;
++unsigned int len;
+ {
+-    /*register int readlen = 0;*/
++    unsigned char *out = (unsigned char *) buf;
++    unsigned int produced = 0;
++
+     if (fd < 0)
+         error("Restore error; mread attempting to read file %d.", fd);
+-    mreadfd = fd;
+-    while (len--) {
+-        if (inrunlength > 0) {
+-            inrunlength--;
+-            *(*((char **) &buf))++ = '\0';
+-        } else {
+-            register short ch = zerocomp_mgetc();
+-            if (ch < 0) {
++
++    if (!nhtamp_dstarted) {
++        if (tamp_decompressor_init(&nhtamp_decomp, (TampConf *) 0, nhtamp_dwin,
++                                   NHTAMP_WIN_BITS) != TAMP_OK)
++            panic("tamp: decompressor init failed");
++        nhtamp_cin_len = 0;
++        nhtamp_cin_pos = 0;
++        nhtamp_dstarted = TRUE;
++    }
++
++    while (produced < len) {
++        size_t written = 0, consumed = 0;
++        tamp_res res;
++
++        if (nhtamp_cin_pos >= nhtamp_cin_len) {
++            int r = read(fd, (genericptr_t) nhtamp_cin,
++                         (unsigned) sizeof nhtamp_cin);
++
++            if (r <= 0) {
+                 restoreprocs.mread_flags = -1;
+                 return;
+             }
+-            if ((*(*(char **) &buf)++ = (char) ch) == RLESC) {
+-                inrunlength = zerocomp_mgetc();
++            nhtamp_cin_len = (unsigned int) r;
++            nhtamp_cin_pos = 0;
++        }
++
++        res = tamp_decompressor_decompress(&nhtamp_decomp, out + produced,
++                                           (size_t) (len - produced), &written,
++                                           nhtamp_cin + nhtamp_cin_pos,
++                                           (size_t) (nhtamp_cin_len
++                                                     - nhtamp_cin_pos),
++                                           &consumed);
++        nhtamp_cin_pos += (unsigned int) consumed;
++        produced += (unsigned int) written;
++
++        if (res != TAMP_OK && res != TAMP_INPUT_EXHAUSTED
++            && res != TAMP_OUTPUT_FULL)
++            panic("tamp: decompression error %d", (int) res);
++
++        if (written == 0 && consumed == 0) {
++            /* The decoder wants more contiguous input than remains: compact
++             * the unconsumed tail, then read more after it. */
++            if (nhtamp_cin_pos > 0) {
++                unsigned int keep = nhtamp_cin_len - nhtamp_cin_pos;
++
++                memcpy(nhtamp_cin, nhtamp_cin + nhtamp_cin_pos, keep);
++                nhtamp_cin_len = keep;
++                nhtamp_cin_pos = 0;
++            }
++            if (nhtamp_cin_len == sizeof nhtamp_cin)
++                panic("tamp: input buffer too small");
++            {
++                int r = read(fd, (genericptr_t) (nhtamp_cin + nhtamp_cin_len),
++                             (unsigned) (sizeof nhtamp_cin - nhtamp_cin_len));
++
++                if (r <= 0) {
++                    restoreprocs.mread_flags = -1;
++                    return;
++                }
++                nhtamp_cin_len += (unsigned int) r;
+             }
+         }
+-        /*readlen++;*/
+     }
+ }
+ #endif /* ZEROCOMP */
+ 
++
+ STATIC_OVL void
+ def_minit()
+ {
