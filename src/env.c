@@ -14,7 +14,7 @@
 
 #define ENV_MAX   12
 #define ENV_NAME  24
-#define ENV_VALUE 64
+#define ENV_VALUE 128
 
 struct env_slot
 {

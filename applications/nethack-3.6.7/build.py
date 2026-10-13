@@ -13,6 +13,10 @@ CONSOLE = HERE.parent.parent
 COMMIT = 'ed600d9f0f3c37677418f0150f59363ca641f3dc'
 REPO = 'https://github.com/NetHack/NetHack.git'
 
+# The line printed before the game starts, baked into the image as the BANNER
+# environment variable.  --banner or $BANNER overrides it.
+DEFAULT_BANNER = 'Welcome to NetHack 3.6.7 running on RP2040'
+
 # Files NetHack reads through the data librarian (dlb_*), in the order they
 # are packed.  `symbols` is not here: NetHack opens it through
 # fopen_datafile(), i.e. plain stdio, so it ships uncompressed.  `tribute`
@@ -45,8 +49,13 @@ def main():
     parser.add_argument('--nethack-options', default='', metavar='OPTS',
                         help='NETHACKOPTIONS for this image, e.g. '
                              '"symset:DECgraphics,number_pad:-1"')
+    parser.add_argument('--banner', metavar='TEXT',
+                        help='startup banner line (default: $BANNER, else the '
+                             'line the recipe ships)')
     parser.add_argument('--jobs', type=int, default=4)
     args = parser.parse_args()
+    banner = (args.banner if args.banner is not None
+              else os.environ.get('BANNER', DEFAULT_BANNER))
     work = args.build_dir.resolve()
     if args.jobs < 1:
         parser.error('--jobs must be positive')
@@ -192,6 +201,7 @@ def main():
     run(['cmake', '-S', src, '-B', firmware, '-G', 'Ninja', '-DPICO_BOARD=pico',
          '-DRP2040_CONSOLE_DIR=' + str(CONSOLE),
          '-DNETHACK_OPTIONS=' + args.nethack_options,
+         '-DNETHACK_BANNER=' + banner,
          '-DNETHACK_SOFT_REBOOT=' + ('ON' if args.soft_reboot else 'OFF')])
     run(['cmake', '--build', firmware, '--parallel', args.jobs])
     run(['cmake', '--build', firmware, '--target', 'volume'])

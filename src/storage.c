@@ -195,7 +195,6 @@ static bool flash_mount(void)
         return false;
     }
 
-    printf("storage: mounted the onboard flash volume\n");
     return true;
 }
 
@@ -247,5 +246,27 @@ bool storage_mount(void)
     }
 
     storage_set_available(true);
+    return true;
+}
+
+bool storage_free_bytes(uint64_t *bytes)
+{
+    DWORD nclst;
+    FATFS *fsp;
+
+    if (!storage_is_available())
+        return false;
+
+    /*
+     * f_getfree() counts the free clusters in the FAT and hands back the
+     * volume object it used. It walks both FAT copies rather than trusting
+     * the FSINFO hint, so the answer is exact. Sector size is fixed at 512
+     * in this FatFs configuration (FF_MIN_SS == FF_MAX_SS), so a cluster is
+     * csize sectors of 512 bytes.
+     */
+    if (f_getfree("0:", &nclst, &fsp) != FR_OK)
+        return false;
+
+    *bytes = (uint64_t) nclst * (uint64_t) fsp->csize * 512u;
     return true;
 }

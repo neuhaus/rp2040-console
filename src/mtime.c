@@ -17,14 +17,15 @@
 #include "trace.h"
 
 #define mtime_file   ".mtimes"
-#define mtime_magic  0x324D544DU   /* "MTM2": int64 dates (MTM1 was int32) */
+#define mtime_magic  0x334D544DU   /* "MTM3": folded time + real epoch */
 #define mtime_max    32
 #define mtime_path   64
-#define mtime_reclen (mtime_path + 8)
+#define mtime_reclen (mtime_path + 8 + 8)
 
 struct mtime_rec {
     char path[mtime_path];
-    int64_t mtime;
+    int64_t mtime;   /* folded, for stat() comparisons */
+    int64_t epoch;   /* real Unix time, for display */
 };
 
 static struct {
@@ -74,6 +75,10 @@ static void load(void)
         for (k = 0; k < 8; k++)
             v |= (uint64_t)raw[mtime_path + k] << (8 * k);
         db.rec[db.count].mtime = (int64_t)v;
+        v = 0;
+        for (k = 0; k < 8; k++)
+            v |= (uint64_t)raw[mtime_path + 8 + k] << (8 * k);
+        db.rec[db.count].epoch = (int64_t)v;
         db.count++;
         TRACE("mtime: file has \"%s\" as %lld\n", db.rec[db.count - 1].path,
               (long long)db.rec[db.count - 1].mtime);
@@ -112,12 +117,15 @@ static void persist(void)
     for (uint32_t i = 0; i < db.count; i++) {
         uint8_t raw[mtime_reclen];
         uint64_t v = (uint64_t)db.rec[i].mtime;
+        uint64_t e = (uint64_t)db.rec[i].epoch;
         int k;
 
         memset(raw, 0, sizeof(raw));
         strncpy((char *)raw, db.rec[i].path, mtime_path - 1);
         for (k = 0; k < 8; k++)
             raw[mtime_path + k] = (uint8_t)(v >> (8 * k));
+        for (k = 0; k < 8; k++)
+            raw[mtime_path + 8 + k] = (uint8_t)(e >> (8 * k));
         if (f_write(&f, raw, sizeof(raw), &bw) != FR_OK ||
             bw != sizeof(raw)) {
             TRACE("mtime: persist short at entry %u\n", (unsigned)i);
@@ -150,7 +158,18 @@ time_t mtime_lookup(const char *path, int *found)
     return (i >= 0) ? (time_t)db.rec[i].mtime : (time_t)0;
 }
 
-void mtime_store(const char *path, time_t t)
+time_t mtime_epoch(const char *path, int *found)
+{
+    int i;
+
+    load();
+    i = (path == NULL) ? -1 : index_of(path);
+    if (found != NULL)
+        *found = (i >= 0);
+    return (i >= 0) ? (time_t)db.rec[i].epoch : (time_t)0;
+}
+
+void mtime_store(const char *path, time_t mtime, time_t epoch)
 {
     int i;
 
@@ -171,8 +190,10 @@ void mtime_store(const char *path, time_t t)
         strncpy(db.rec[i].path, path, mtime_path - 1);
         db.rec[i].path[mtime_path - 1] = '\0';
     }
-    db.rec[i].mtime = (int64_t)t;
-    TRACE("mtime: remember \"%s\" as %lld\n", path, (long long)t);
+    db.rec[i].mtime = (int64_t)mtime;
+    db.rec[i].epoch = (int64_t)epoch;
+    TRACE("mtime: remember \"%s\" as %lld (epoch %lld)\n", path,
+          (long long)mtime, (long long)epoch);
     persist();
 }
 

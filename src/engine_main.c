@@ -36,6 +36,7 @@
 #include "probes.h"
 #include "restart.h"
 #include "clock.h"
+#include "boot.h"
 #ifdef RP2040_CONSOLE_SOFT_REBOOT
 #include "rp2040-soft-reboot.h"
 #endif
@@ -141,6 +142,12 @@ static void engine_start(void)
     storage_mount();
     console_diag_stage(DIAG_STAGE_STORAGE);
     probe(5);
+
+    /*
+     * The banner and the saved-game list, before the clock prompt so that
+     * prompt holds the display long enough to read them.
+     */
+    boot_report();
 
     console_clock_init();
     console_diag_stage(DIAG_STAGE_CLOCK);

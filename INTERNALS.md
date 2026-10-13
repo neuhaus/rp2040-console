@@ -37,6 +37,7 @@ produces the data volume, and both are flashed in either order. The arguments:
 | `DATA_FILES` | files from `ROOT` to put on the volume |
 | `EMPTY_FILES` | zero-length files the program expects an installation to have provided |
 | `DATA_DIRS` | directories to create on the volume |
+| `LISTDIR` | volume directory listed at startup with size and remembered date (default: none) |
 | `ARGV0` | what `argv[0]` holds (default: `NAME`) |
 | `HEAP_END` | top of the heap; see the memory map below |
 | `COLS`, `ROWS` | what the terminal reports its size as (default 80x24) |
@@ -272,6 +273,13 @@ fallback. See [Filesystem](#filesystem).
 supplies. There is no `environ` here, so a program that reads its environment
 would otherwise find nothing, and several of them treat that as fatal.
 
+**Banner and saved games.** With `BANNER` in the environment the engine prints
+that line just before the game starts, so the text is build data rather than a
+literal in any game. With the manifest's `LISTDIR` it also lists that
+directory, each file's size and the session time it was last written (FatFs is
+built timestamp-off, so the engine remembers it). Neither clears the screen, so
+the lines scroll back as the game draws.
+
 **Clock.** `time()` on a real time base, set at boot from the build date and
 offered for correction on the console. Nothing on this board keeps time, and a
 program that stamps score files with 1970 is worse than useless.
@@ -283,7 +291,9 @@ and `getpid()`, both of which are fixed here.
 
 **Exit.** `_exit()` reboots. A game that has not freed what it allocated, and
 there is no `exec` to replace it with, restarts cleanly in a second; a boot grace
-period stops a program that fails immediately from rebooting in a loop.
+period stops a program that fails immediately from rebooting in a loop. Before
+the restart prompt it prints how much space is left on the volume, the question
+a game that keeps a save or a level per visit makes worth asking.
 
 **Diagnostics.** Startup stages printed as they are reached, and a `TRACE()`
 macro for file and console traffic that is off by default. Genuine setup

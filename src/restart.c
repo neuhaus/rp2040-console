@@ -25,6 +25,7 @@
  * second and hands the next game all of its RAM.
  */
 
+#include <stdint.h>
 #include <stdio.h>
 #include <unistd.h>
 
@@ -34,6 +35,7 @@
 #include "clock.h"
 #include "restart.h"
 #include "console.h"
+#include "storage.h"
 
 /*
  * How long the program has to have been running for an exit() to count as
@@ -82,6 +84,21 @@ static void wait_for_restart(int status, int soft)
                "restarting.\nPower cycle the board to try again.\n");
         for (;;)
             sleep_ms(1000);
+    }
+
+    /*
+     * What the volume has left. A game that keeps a save or a level per visit
+     * is the reason to look, and this is the last point at which the answer
+     * can include everything the game just wrote. Printed only when there is
+     * a mounted volume to ask.
+     */
+    {
+        uint64_t free_bytes;
+
+        if (storage_free_bytes(&free_bytes))
+            printf("\n%llu bytes free on the volume (%llu KB).\n",
+                   (unsigned long long) free_bytes,
+                   (unsigned long long) (free_bytes / 1024));
     }
 
     /*

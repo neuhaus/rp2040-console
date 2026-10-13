@@ -297,11 +297,11 @@ int creat(const char *path, mode_t mode)
 
 /*
  * The session clock in the same folded form filinfo_mtime() produces, so the
- * two compare.
+ * two compare. The real epoch is handed to mtime_store() alongside it, so a
+ * listing can show a date rather than the comparison encoding.
  */
-static time_t session_mtime(void)
+static time_t fold_session(time_t now)
 {
-    time_t now = console_clock_now();
     struct tm *tm = gmtime(&now);
     int year;
 
@@ -335,8 +335,11 @@ int close(int fd)
      * RTC to ask). Read-only handles leave no trace.
      */
     if ((open_files[fd].flags & O_ACCMODE) != O_RDONLY &&
-        open_files[fd].have_path)
-        mtime_store(open_files[fd].path, session_mtime());
+        open_files[fd].have_path) {
+        time_t now = console_clock_now();
+
+        mtime_store(open_files[fd].path, fold_session(now), now);
+    }
 
     open_files[fd].used = false;
     return 0;
@@ -666,8 +669,11 @@ int fsync(int fd)
 
     /* Same correction as in close(): f_sync re-stamps as well. */
     if ((open_files[fd].flags & O_ACCMODE) != O_RDONLY &&
-        open_files[fd].have_path)
-        mtime_store(open_files[fd].path, session_mtime());
+        open_files[fd].have_path) {
+        time_t now = console_clock_now();
+
+        mtime_store(open_files[fd].path, fold_session(now), now);
+    }
 
     return 0;
 }

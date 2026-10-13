@@ -174,6 +174,7 @@ set(RP2040_CONSOLE_ROWS "24" CACHE STRING
 #   FS_SIZE       volume size in bytes            (default 524288)
 #   HEAP_END      top of the heap; see below      (default: SDK's)
 #   COLS ROWS     terminal size to report         (default 80 24)
+#   LISTDIR       volume directory listed at startup (default: none)
 #   LEGACY_C      quiet the compiler about pre-ANSI idioms
 #   RENAMES       name=replacement, for a name in the program that clashes with
 #                 something else in the link; see the prefix header
@@ -191,7 +192,8 @@ function(rp2040_console_game)
             FLASH_SIZE
             STACK_RESERVE
             COLS
-            ROWS)
+            ROWS
+            LISTDIR)
     set(multiValueArgs
             SOURCES
             GENERATED
@@ -317,6 +319,7 @@ function(rp2040_console_game)
             "${RP2040_CONSOLE_SRC}/probes.c"
             "${RP2040_CONSOLE_SRC}/restart.c"
             "${RP2040_CONSOLE_SRC}/clock.c"
+            "${RP2040_CONSOLE_SRC}/boot.c"
             "${RP2040_CONSOLE_SRC}/env.c"
             "${RP2040_CONSOLE_SRC}/entropy.c"
             "${RP2040_CONSOLE_SRC}/syscalls.c"
@@ -504,6 +507,16 @@ function(rp2040_console_game)
 
     if(RP2040_CONSOLE_UART_STDIN)
         target_compile_definitions(${CG_NAME} PRIVATE RP2040_CONSOLE_UART_STDIN=1)
+    endif()
+
+    if(CG_LISTDIR)
+        #
+        # A directory the app wants listed at startup (NetHack's saved games).
+        # Compiled in only when the manifest names one, since the idea of
+        # "saves" is the app's, not the engine's.
+        #
+        target_compile_definitions(${CG_NAME} PRIVATE
+                "RP2040_CONSOLE_LISTDIR=\"${CG_LISTDIR}\"")
     endif()
 
     if(NOT RP2040_CONSOLE_CLOCK_PROMPT)

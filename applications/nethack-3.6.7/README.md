@@ -59,7 +59,9 @@ NetHack panicked with an empty reason line (the panic save could not be written
 either, so `NH_abort()` ran before the reason was printed).
 
 Save/restore has been exercised on hardware across a power cycle, and a game has
-descended past dungeon level 10 with no volume trouble.
+descended past dungeon level 10 with no volume trouble. When the game ends it
+prints how many bytes are free on the volume, so the fit of a save can be judged
+without a host.
 
 ## Build
 
@@ -129,6 +131,27 @@ These two are personal choices, so the recipe ships neither and a default build
 leaves them at upstream's values. `build.py` always passes the option through
 (empty when the flag is absent), so a later build without the flag is clean
 again rather than keeping the previous value.
+
+### Startup banner and saved games
+
+Before the game takes the screen, the image prints a one-line banner and lists
+the saved games in `save/`, each with its size and the date the session clock
+gave it:
+
+```
+Welcome to NetHack 3.6.7 running on RP2040
+Saved games in save/:
+  1000wizard               390368 bytes  2026-10-13 18:22
+```
+
+The banner is not a literal in the port. It is baked into the image as the
+`BANNER` environment variable, set at build time from `--banner` or `$BANNER`
+(the default is the line above); `--banner ''` drops it. The listing needs a
+"last saved" date, which FatFs cannot supply -- it is built timestamp-off and
+stamps every file it writes 2022 -- so the engine remembers the session time
+when it closes a file and reads it back for the listing; a file it never wrote
+is shown without a date. Nothing clears the screen here, so the lines stay in
+the terminal's scrollback once the game draws over them.
 
 ## Outputs and checks
 

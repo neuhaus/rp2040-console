@@ -19,6 +19,12 @@ endif()
 set(NETHACK_OPTIONS "" CACHE STRING
         "Extra NETHACKOPTIONS for this image; appended after the default")
 
+# One line printed before the game starts, handed to the engine as the BANNER
+# environment variable.  It is build-time text, not a literal in the port, so
+# a build can name itself; build.py sets it from --banner or $BANNER.
+set(NETHACK_BANNER "Welcome to NetHack 3.6.7 running on RP2040" CACHE STRING
+        "Startup banner line; empty for none")
+
 # NetHack's whoami() seeds the character name from $USER or $LOGNAME and then
 # skips the "Who are you?" prompt, so neither is set here: the player names
 # their own character.  HOME stays for NetHack's config-file lookup.
@@ -32,6 +38,7 @@ if(NETHACK_OPTIONS)
     string(APPEND _nethack_options ",${NETHACK_OPTIONS}")
 endif()
 list(APPEND _game_env "NETHACKOPTIONS=${_nethack_options}")
+list(APPEND _game_env "BANNER=${NETHACK_BANNER}")
 
 include(${RP2040_CONSOLE_DIR}/cmake/rp2040-console.cmake)
 
@@ -63,6 +70,7 @@ rp2040_console_game(NAME nethack ${_restart_option}
         DATA_FILES symbols nhdata
         EMPTY_FILES record perm logfile xlogfile
         DATA_DIRS save
+        LISTDIR save
         FS_OFFSET 0x180000 FS_SIZE 0x80000
         HEAP_END 0x2003c000 STACK_RESERVE 24576)
 target_compile_options(nethack PRIVATE -Oz -fsigned-char
