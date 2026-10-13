@@ -65,6 +65,7 @@ rp2040_console_game(NAME nethack ${_restart_option}
         SOURCES ${SRCS}
         INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
                      ${CMAKE_CURRENT_SOURCE_DIR}/tamp
+                     ${CMAKE_CURRENT_SOURCE_DIR}/uzlib
         LEGACY_C LEGACY_TIME32
         ENV ${_game_env}
         DATA_FILES nhdata
@@ -90,4 +91,9 @@ target_sources(nethack PRIVATE platform.c)
 target_sources(nethack PRIVATE tamp/common.c tamp/decompressor.c tamp/compressor.c)
 set_property(SOURCE tamp/common.c tamp/decompressor.c tamp/compressor.c APPEND PROPERTY
         COMPILE_DEFINITIONS TAMP_STREAM=0)
+
+# raw-deflate inflate for the data librarian (port/nhdlb.c).  Like Tamp it is
+# a third-party source, so it too stays out of SOURCES (no compat.h, no
+# platform prefix header).
+target_sources(nethack PRIVATE uzlib/tinflate.c)
 

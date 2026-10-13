@@ -4,10 +4,10 @@ Source: [NetHack/NetHack](https://github.com/NetHack/NetHack), tag
 `NetHack-3.6.7_Released`, commit
 `ed600d9f0f3c37677418f0150f59363ca641f3dc`. The recipe applies configuration
 changes in a private generated source tree and adds the CMake manifest,
-compatibility header, platform adapters, the Tamp codec and a replacement data
-librarian. Upstream game C files and the supplied Git checkout remain
-unchanged. Keep the upstream `dat/license` with distributions; it is included
-in the FAT image.
+compatibility header, platform adapters, the Tamp and uzlib codecs and a
+replacement data librarian. Upstream game C files and the supplied Git checkout
+remain unchanged. Keep the upstream `dat/license` with distributions; it is
+included in the FAT image.
 
 ## Why the data is compressed
 
@@ -19,32 +19,34 @@ So the read-only data is compressed, which is what makes the port fit:
 - Every file NetHack reads through its data librarian (`dungeon`, the level
   descriptions, `quest.dat`, the encyclopedia `data`, `symbols`, rumors,
   oracles, the help screens, `bogusmon`/`engrave`/`epitaph`, `options`) is
-  compressed with
-  [Tamp](https://github.com/BrianPugh/tamp), whose decoder is about 2 KB of
-  code and needs only a 1-32 KB window per open file. The window size is chosen
-  per file (see below) and recorded in each stream's header, so the reader
-  sizes its buffer from the stream.
+  compressed with raw deflate, decoded on the board by
+  [uzlib](https://github.com/micropython/micropython/tree/master/lib/uzlib)
+  (a few KB of code and a 4 KB window per open file).  Deflate beats the Tamp
+  codec used for the level and save files by 15-25% on this data: it adds
+  Huffman coding on top of LZ77, which Tamp lacks.
 - The files are collected into a single archive, `nhdata`, rather than left
   separate. A FAT volume rounds each file up to a whole cluster; in one file
   they cost one file's worth of slack.
-- The window is not a fixed compromise. Tamp's ratio is not monotonic in the
-  window: the big text files keep finding longer matches with a wider window,
-  but level files are small and repetitive enough that a wide window's longer
-  distance encoding costs more than it saves. `build.py` probes a few sizes per
-  file and keeps the smallest, which both shrinks the archive and lets the
-  small level files use (and so allocate) the *smallest* window.
+- The window is a fixed 4 KB, the same as the level and save codec. Every
+  entry is compressed with it, so the decoder allocates one 4 KB dictionary
+  per open file. A wider window would compress a little better (`data` is
+  10 KB smaller at 8 KB) but holds more RAM while a data file is open.
 - The recipe defines `DLB` and replaces `src/dlb.c`, so NetHack's existing
-  `dlb_fopen`/`dlb_fread`/`dlb_fseek` calls land on a Tamp streaming reader.
+  `dlb_fopen`/`dlb_fread`/`dlb_fseek` calls land on a streaming inflate.
   Seeking is emulated by decoding and discarding; a backward seek restarts the
   entry. NetHack's access patterns are almost entirely forward scans, and the
   files are small enough that this is cheaper than the flash it saves.
 
+`build.py` packs the archive with the host's zlib and then decodes it back with
+the same uzlib the board runs (`port/host/nhdata_check.c`), so a decoder
+mismatch fails the build rather than the game.
+
 The 138 files packed into `nhdata` total **939,508 bytes (about 918 KB)**
-uncompressed. Tamp brings them to about **338 KB** (a ratio near 0.37), plus a
-3,876-byte header and directory. Only the compressed form fits: uncompressed as
-separate files the same data would not fit on the volume alongside the
-firmware, and even a single uncompressed archive would be larger than what is
-left over after the firmware.
+uncompressed. Raw deflate brings them to about **305 KB** (a ratio near 0.33),
+plus a 3,876-byte header and directory. Only the compressed form fits:
+uncompressed as separate files the same data would not fit on the volume
+alongside the firmware, and even a single uncompressed archive would be larger
+than what is left over after the firmware.
 
 `tribute` is the one data file left out: its compressed form is the difference
 between fitting and not, and it is the least of what the library carries (the
@@ -55,14 +57,16 @@ its absence the way it handles any missing optional data file.
 
 NetHack keeps one file per level the player has left and re-reads it on return.
 On a volume this size that is the binding constraint on how deep a game can go,
-so level files and save files are compressed with the same Tamp codec as the
-data library. The port keeps upstream's `ZEROCOMP` plumbing -- its option, its
-`SFI1_ZEROCOMP` savefile flag and its `bufon`/`bufoff` raw-front-matter
-protocol -- and swaps only the codec for Tamp, so `src/save.c` and
-`src/restore.c` change only where they do the byte I/O.
+so level files and save files are compressed too. They use Tamp rather than the
+data library's deflate: a level file is written on the board while playing, and
+Tamp's compressor is far smaller than a deflate encoder. The port keeps
+upstream's `ZEROCOMP` plumbing -- its option, its `SFI1_ZEROCOMP` savefile flag
+and its `bufon`/`bufoff` raw-front-matter protocol -- and swaps only the codec
+for Tamp, so `src/save.c` and `src/restore.c` change only where they do the
+byte I/O.
 
 Level files drop from about 20-30 KB to about 1.4-8 KB (roughly 8x), so about
-**40 levels** fit in the free space instead of about four. Without this the
+**55 levels** fit in the free space instead of about four. Without this the
 volume filled after a few levels, the level write failed as a short write, and
 NetHack panicked with an empty reason line (the panic save could not be written
 either, so `NH_abort()` ran before the reason was printed).
@@ -107,11 +111,13 @@ python3 applications/nethack-3.6.7/build.py --source ./nethack
 without shell execution. `HOST_LD_LIBRARY_PATH` optionally sets library lookup
 for executed host generators. The ARM compiler remains `arm-none-eabi-gcc`.
 
-The Tamp tools are built from the vendored library under `port/tamp/` (Apache
-2.0, `port/tamp/LICENSE.txt`); no network access beyond fetching NetHack is
-needed. `tamp_pack` builds the archive and `tamp_check` decompresses every entry
-back and compares it with its source, so a bad archive fails the build rather
-than the board.
+Two compression libraries are vendored, both fetched with NetHack and needing no
+network access of their own: Tamp for the level and save files (`port/tamp/`,
+Apache 2.0, `port/tamp/LICENSE.txt`) and uzlib for the data library
+(`port/uzlib/`, zlib licence). `build.py` packs `nhdata` with the host's zlib,
+then builds and runs `port/host/nhdata_check.c`, which decodes every entry with
+the same uzlib the board runs and compares it with its source, so a bad archive
+fails the build rather than the board.
 
 ### Startup options
 
@@ -174,13 +180,13 @@ Default outputs are under `build/nethack-3.6.7/hardware/`:
 The volume holds `nhdata` (the compressed library, which carries every data
 file including `symbols`), empty `record`,
 `perm`, `logfile` and `xlogfile` (NetHack locks and appends to all four, and
-`lock_file()` opens the file itself), and a `save` directory. About 363 KB of
-the 524 KB is used, leaving about **161 KB** for the levels a game has visited.
+`lock_file()` opens the file itself), and a `save` directory. About 330 KB of
+the 524 KB is used, leaving about **194 KB** for the levels a game has visited.
 The volume is FAT12 with 512-byte clusters, so the many small level files cost
 almost no slack.
 
 The split between firmware and volume is set by `FS_OFFSET`/`FS_SIZE` in the
-manifest. The volume starts at `0x17D000`, just above the firmware (about 6 KB
+manifest. The volume starts at `0x17D000`, just above the firmware (about 5 KB
 to spare); the volume's free space is what a long game has for level files, so
 raise `FS_OFFSET` only as far as the savegame budget allows.
 

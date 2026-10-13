@@ -5,7 +5,9 @@ import os
 from pathlib import Path
 import shlex
 import shutil
+import struct
 import subprocess
+import zlib
 
 HERE = Path(__file__).resolve().parent
 CONSOLE = HERE.parent.parent
@@ -29,26 +31,47 @@ DATA_LIBRARY = (
 )
 
 
-def window_bits(packer, path):
-    """Window size that packs one data file smallest.
+# The data library's raw-deflate window.  Each entry is compressed with a
+# 4 KB window (build.py) and the on-board inflater uses a 4 KB dictionary
+# (port/nhdlb.c), so every back-reference is in range.  Keep the two in step.
+NH_WINDOW_BITS = 12
+NH_NAME_MAX = 16
 
-    Tamp's ratio is not monotonic in the window: the big text files keep
-    finding longer matches with a wider window, while level files are small
-    and repetitive enough that a wider window's longer distance encoding
-    costs more than it saves.  Probe a few sizes and keep the smallest.  The
-    window is recorded in the stream header, so the decompressor reads it
-    back without the archive having to store it per entry.
+
+def pack_nhdata(dat, library):
+    """Write dat/nhdata: raw-deflate streams for `library`, in one archive.
+
+    The format matches port/nhdlb.c: a 12-byte header, a 28-byte directory
+    entry per file, then the concatenated deflate streams.
     """
-    probe = path.parent / '.nhdata-window-probe'
-    best = None
-    for bits in (10, 11, 12, 13, 14, 15):
-        subprocess.run([str(packer), str(probe), 'probe', str(bits), str(path)],
-                       check=True, stdout=subprocess.DEVNULL)
-        size = probe.stat().st_size
-        if best is None or size < best[1]:
-            best = (bits, size)
-    probe.unlink()
-    return best[0]
+    blob = bytearray()
+    directory = bytearray()
+    data_start = 12 + 28 * len(library)
+    raw = {}
+    for name in library:
+        path = dat / name
+        if not path.exists():
+            raise SystemExit('missing data file: %s' % path)
+        raw[name] = path.read_bytes()
+        co = zlib.compressobj(9, zlib.DEFLATED, -NH_WINDOW_BITS)
+        comp = co.compress(raw[name]) + co.flush()
+        nm = name.encode()[: NH_NAME_MAX - 1]
+        directory += nm + b'\0' * (NH_NAME_MAX - len(nm))
+        directory += struct.pack('<III', data_start + len(blob), len(comp),
+                                 len(raw[name]))
+        blob += comp
+    archive = (b'NHDA' + struct.pack('<II', 1, len(library))
+               + bytes(directory) + bytes(blob))
+    (dat / 'nhdata').write_bytes(archive)
+
+    # Round-trip every entry; the on-board decoder reads exactly this format.
+    for i, name in enumerate(library):
+        off, clen, _ulen = struct.unpack_from(
+            '<III', archive, 12 + 28 * i + NH_NAME_MAX)
+        dec = zlib.decompressobj(-NH_WINDOW_BITS)
+        got = dec.decompress(archive[off:off + clen]) + dec.flush()
+        if got != raw[name]:
+            raise SystemExit('nhdata round-trip failed for %s' % name)
 
 
 def main():
@@ -99,17 +122,19 @@ def main():
     # The port's own files.  nhdlb.c is the replacement data librarian and
     # has to replace NetHack's own src/dlb.c (the generated tree is rooted at
     # src/ above the upstream src/ directory, which is why this is src/src).
-    # The Tamp library goes to src/tamp/ where both its consumers (src/src/dlb.c
-    # and the two library objects the target compiles) can reach its headers.
+    # The Tamp and uzlib libraries go to src/tamp/ and src/uzlib/ where their
+    # consumers (src/src/dlb.c, save.c/restore.c, and the target's library
+    # objects) can reach their headers.
     # shutil.copy (not copy2) so a rebuilt tree notices the change: copy2
     # preserves mtimes and ninja would not.
     port = HERE / 'port'
     for name in ('compat.h', 'platform.c', 'layout.c', 'CMakeLists.txt'):
         shutil.copy(port / name, src / name)
     shutil.copy(port / 'nhdlb.c', src / 'src' / 'dlb.c')
-    if (src / 'tamp').exists():
-        shutil.rmtree(src / 'tamp')
-    shutil.copytree(port / 'tamp', src / 'tamp', copy_function=shutil.copy)
+    for lib in ('tamp', 'uzlib'):
+        if (src / lib).exists():
+            shutil.rmtree(src / lib)
+        shutil.copytree(port / lib, src / lib, copy_function=shutil.copy)
     # The whole point of the recipe is this replacement; fail loudly here
     # rather than shipping a binary that still looks for NetHack's nhdat.
     if 'NHDATA_FILE' not in (src / 'src' / 'dlb.c').read_text():
@@ -124,27 +149,11 @@ def main():
         env['LD_LIBRARY_PATH'] = os.environ['HOST_LD_LIBRARY_PATH']
 
     util = src / 'util'
-    tamp = src / 'tamp'
 
     def compile_host(inputs, output, cwd=util):
         run(cc + flags + ['-std=gnu89', '-w', '-include', src / 'compat.h',
                           '-I', src / 'include'] + inputs + ['-o', output],
             cwd=cwd)
-
-    # The Tamp tools are ordinary C and are not built with NetHack's
-    # compatibility shim.  The packer needs the compressor; the verifier
-    # needs the decompressor, which is the code the board will run.
-    tamp_common = ['-I', tamp]
-    pack_sources = [str(tamp / 'common.c'), str(tamp / 'compressor.c')]
-    run(cc + flags + tamp_common + ['-O2', '-DTAMP_STREAM=1',
-                                    '-DTAMP_STREAM_STDIO=1',
-                                    str(port / 'host' / 'tamp_pack.c')]
-        + pack_sources + ['-o', work / 'tamp_pack'])
-    run(cc + flags + tamp_common + ['-O2', '-DTAMP_STREAM=0',
-                                    str(port / 'host' / 'tamp_check.c'),
-                                    str(tamp / 'common.c'),
-                                    str(tamp / 'decompressor.c'),
-                                    '-o', work / 'tamp_check'])
 
     def execute(tool, *options, cwd=util):
         run(runner + [util / tool, *options], cwd=cwd, env=env)
@@ -184,20 +193,21 @@ def main():
     for description in sorted((src / 'dat').glob('*.des')):
         execute('lev_comp32', description.name, cwd=src / 'dat')
 
-    # Collect every file the data librarian serves into one Tamp archive.
+    # Collect every file the data librarian serves into one deflate archive.
     dat = src / 'dat'
     library = list(DATA_LIBRARY) + [p.name for p in sorted(dat.glob('*.lev'))]
-    pack_args = [work / 'tamp_pack', dat / 'nhdata']
-    for name in library:
-        path = dat / name
-        if not path.exists():
-            parser.error('missing data file: %s' % path)
-        pack_args += [name, str(window_bits(work / 'tamp_pack', path)), path]
-    run(pack_args)
-    check_args = [work / 'tamp_check', dat / 'nhdata']
-    for name in library:
-        check_args += [name, dat / name]
-    run(check_args)
+    pack_nhdata(dat, library)
+
+    # Decode the archive with the same inflater the board runs (uzlib), not
+    # just the host's zlib, so a decoder mismatch is caught here.  uzlib's
+    # unused checksum wrapper pulls in CRC/Adler, which --gc-sections drops.
+    run(cc + flags + ['-I', src / 'uzlib', '-O2',
+                      '-ffunction-sections', '-fdata-sections',
+                      '-Wl,--gc-sections',
+                      str(port / 'host' / 'nhdata_check.c'),
+                      str(src / 'uzlib' / 'tinflate.c'),
+                      '-o', work / 'nhdata_check'])
+    run([str(work / 'nhdata_check'), str(dat / 'nhdata'), str(dat)])
 
     # Confirm the host's byte layout matches the target's before shipping the
     # generated data files.

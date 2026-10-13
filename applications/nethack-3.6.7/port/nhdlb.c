@@ -6,38 +6,44 @@
  *
  * NetHack reads every read-only data file - the dungeon and level
  * descriptions, quest texts, the encyclopedia, rumors, per-monster text,
- * help screens - through the dlb_* interface.  With DLB defined, those
- * calls land here instead of on stdio.
+ * help screens, the symbol set - through the dlb_* interface.  With DLB
+ * defined, those calls land here instead of on stdio.
  *
- * All of those files live in one Tamp-compressed archive, "nhdata":
+ * All of those files live in one raw-deflate archive, "nhdata":
  *
  *     "NHDA" | u32 version | u32 count
- *     count * { char name[12]; u32 off; u32 clen; u32 ulen; }
- *     <count concatenated Tamp streams>
+ *     count * { char name[16]; u32 off; u32 clen; u32 ulen; }
+ *     <count concatenated raw deflate streams>
  *
  * One archive rather than a hundred separate files, because a 2 KB FAT
  * cluster turns each small level file into a 2 KB allocation; and
  * compressed rather than not, because the program plus the data does not
- * otherwise fit in 2 MB of flash.  Tamp's decoder needs only its window
- * (1-4 KB per open file) and its decompressor is about 2 KB of code.
+ * otherwise fit in 2 MB of flash.
  *
- * Each open handle owns its own FILE* and decompressor, so two data files
+ * Raw deflate rather than Tamp (which the level and save files use): on
+ * this data deflate is 15-25% smaller - it adds Huffman coding on top of
+ * LZ77, which Tamp lacks - and the decoder is just as small.  The window is
+ * 4 KB, so the encoder is run with a 4 KB window (build.py) and every
+ * back-reference stays in range.
+ *
+ * Each open handle owns its own FILE* and inflate state, so two data files
  * can be open at once without sharing a read position.  Seeking is emulated
- * by decoding and discarding; a backward seek restarts the entry from its
- * first byte.  The files are small enough that this is cheaper than the
- * flash it saves, and NetHack's access patterns are almost entirely forward
- * scans.
+ * by decoding and discarding; a backward seek restarts the entry.  The files
+ * are small enough that this is cheaper than the flash it saves, and
+ * NetHack's access patterns are almost entirely forward scans.
  */
 #include "config.h"
 #include "dlb.h"
 
 #if defined(DLB)
 #include <string.h>
-#include "decompressor.h"
+#include "uzlib.h"
 
 #define NHDATA_FILE "nhdata"
 #define NH_NAME_MAX 16
-#define NH_INBUF 512
+#define NH_INBUF 1024
+#define NH_WINDOW_BITS 12
+#define NH_WINDOW (1U << NH_WINDOW_BITS)
 
 struct nh_header {
     char magic[4];
@@ -47,22 +53,20 @@ struct nh_header {
 
 struct nh_dir_ent {
     char name[NH_NAME_MAX];
-    unsigned int off;  /* absolute offset of this entry's Tamp stream */
+    unsigned int off;  /* absolute offset of this entry's deflate stream */
     unsigned int clen; /* compressed length */
     unsigned int ulen; /* uncompressed length */
 };
 
 struct nh_stream {
-    TampDecompressor dec;
-    TampConf conf;
-    unsigned char *window;
-    unsigned long ulen; /* uncompressed length */
-    unsigned long upos; /* uncompressed read position */
-    unsigned long coff; /* start of the entry in the archive */
-    unsigned long hoff; /* bytes of Tamp header consumed at that start */
-    unsigned long cpos; /* compressed bytes read so far this entry */
-    unsigned long cend; /* compressed bytes in this entry */
-    size_t in_pos, in_len;
+    uzlib_uncomp_t dec;
+    unsigned char *window; /* inflate dictionary (back-reference ring) */
+    FILE *fp;
+    unsigned long ulen;    /* uncompressed length */
+    unsigned long upos;    /* uncompressed read position */
+    unsigned long coff;    /* start of the entry in the archive */
+    unsigned long cend;    /* first byte past the entry */
+    unsigned long cpos;    /* compressed bytes read so far this entry */
     unsigned char inbuf[NH_INBUF];
 };
 
@@ -133,45 +137,49 @@ nh_close(struct nh_stream *st)
     free((genericptr_t) st);
 }
 
-/* Position a fresh decompressor over the entry's stream.  fp must already
- * be open; on success its position is left after the entry's Tamp header. */
+/* uzlib pulls input through this when its window empties.  The callback
+ * refills from the archive and returns the first byte; the rest of the
+ * buffer is handed to uzlib via source/source_limit.  It stops at the end
+ * of this entry, never reading into the next stream. */
+static int
+nh_source_read(void *arg)
+{
+    struct nh_stream *st = (struct nh_stream *) arg;
+    size_t want, n;
+
+    if (st->cpos >= st->cend)
+        return -1;
+    want = (size_t) (st->cend - st->cpos);
+    if (want > sizeof st->inbuf)
+        want = sizeof st->inbuf;
+    n = fread(st->inbuf, 1, want, st->fp);
+    if (n == 0)
+        return -1;
+    st->cpos += n;
+    st->dec.source_limit = st->inbuf + n;
+    st->dec.source = st->inbuf + 1; /* the returned byte was inbuf[0] */
+    return st->inbuf[0];
+}
+
+/* Begin a fresh inflate over the entry's stream.  fp must already be
+ * positioned at ent->off. */
 static struct nh_stream *
 nh_open(FILE *fp, const struct nh_dir_ent *ent)
 {
     struct nh_stream *st;
-    size_t want, consumed = 0;
-    tamp_res res;
-
-    if (fseek(fp, (long) ent->off, SEEK_SET) != 0)
-        return (struct nh_stream *) 0;
 
     st = (struct nh_stream *) alloc(sizeof *st);
     memset(st, 0, sizeof *st);
+    st->fp = fp;
     st->ulen = ent->ulen;
     st->coff = ent->off;
-    st->cend = ent->clen;
-
-    want = ent->clen < NH_INBUF ? ent->clen : NH_INBUF;
-    st->in_len = fread(st->inbuf, 1, want, fp);
-    st->cpos = st->in_len;
-    if (st->in_len == 0) {
-        nh_close(st);
-        return (struct nh_stream *) 0;
-    }
-    res = tamp_decompressor_read_header(&st->conf, st->inbuf, st->in_len,
-                                        &consumed);
-    if (res != TAMP_OK) {
-        nh_close(st);
-        return (struct nh_stream *) 0;
-    }
-    st->in_pos = consumed;
-    st->hoff = consumed;
-    st->window = (unsigned char *) alloc((unsigned) (1 << st->conf.window));
-    if (tamp_decompressor_init(&st->dec, &st->conf, st->window,
-                               (uint8_t) st->conf.window) != TAMP_OK) {
-        nh_close(st);
-        return (struct nh_stream *) 0;
-    }
+    st->cend = (unsigned long) ent->off + ent->clen;
+    st->cpos = ent->off;
+    st->window = (unsigned char *) alloc(NH_WINDOW);
+    uzlib_uncompress_init(&st->dec, st->window, NH_WINDOW);
+    st->dec.source_read_data = st;
+    st->dec.source_read_cb = nh_source_read;
+    st->dec.source = st->dec.source_limit = st->inbuf; /* force a refill */
     return st;
 }
 
@@ -179,38 +187,15 @@ nh_open(FILE *fp, const struct nh_dir_ent *ent)
 static boolean
 nh_rewind(struct nh_stream *st, FILE *fp)
 {
-    size_t want;
-
-    if (fseek(fp, (long) (st->coff + st->hoff), SEEK_SET) != 0)
+    if (fseek(fp, (long) st->coff, SEEK_SET) != 0)
         return FALSE;
-    want = (st->cend - st->hoff) < NH_INBUF ? (size_t) (st->cend - st->hoff)
-                                            : NH_INBUF;
-    st->in_len = fread(st->inbuf, 1, want, fp);
-    st->in_pos = 0;
-    st->cpos = st->hoff + st->in_len;
+    st->cpos = st->coff;
     st->upos = 0;
-    if (st->in_len == 0)
-        return FALSE;
-    return tamp_decompressor_init(&st->dec, &st->conf, st->window,
-                                  (uint8_t) st->conf.window)
-           == TAMP_OK;
-}
-
-/* Refill the compressed-input buffer from the archive.  Returns the number
- * of bytes made available, or 0 at the end of the entry. */
-static size_t
-nh_fill(struct nh_stream *st, FILE *fp)
-{
-    size_t avail, want;
-
-    avail = (size_t) (st->cend - st->cpos);
-    want = avail < NH_INBUF ? avail : NH_INBUF;
-    if (want == 0)
-        return 0;
-    st->in_len = fread(st->inbuf, 1, want, fp);
-    st->in_pos = 0;
-    st->cpos += st->in_len;
-    return st->in_len;
+    uzlib_uncompress_init(&st->dec, st->window, NH_WINDOW);
+    st->dec.source_read_data = st;
+    st->dec.source_read_cb = nh_source_read;
+    st->dec.source = st->dec.source_limit = st->inbuf;
+    return TRUE;
 }
 
 boolean
@@ -244,11 +229,11 @@ dlb_fopen(const char *name, const char *mode)
     fp = fopen(NHDATA_FILE, "rb");
     if (!fp)
         return (dlb *) 0;
-    st = nh_open(fp, ent);
-    if (!st) {
+    if (fseek(fp, (long) ent->off, SEEK_SET) != 0) {
         (void) fclose(fp);
         return (dlb *) 0;
     }
+    st = nh_open(fp, ent);
     dp = (dlb *) alloc(sizeof *dp);
     dp->fp = fp;
     dp->lib = (library *) st;
@@ -275,6 +260,7 @@ dlb_fread(char *buf, int size, int quan, dlb *dp)
 {
     struct nh_stream *st = (struct nh_stream *) dp->lib;
     unsigned long total, got = 0;
+    unsigned char *out = (unsigned char *) buf;
 
     if (size <= 0 || quan <= 0)
         return 0;
@@ -283,24 +269,13 @@ dlb_fread(char *buf, int size, int quan, dlb *dp)
         total = st->ulen - st->upos;
 
     while (got < total) {
-        size_t out_written = 0, in_consumed = 0, remain;
-        tamp_res res;
+        int res;
 
-        /* Refill only when the current buffer is spent; a refill that finds
-         * nothing is fine, because the decoder may still be draining a match
-         * it already read.  The no-progress check below ends the loop. */
-        if (st->in_pos >= st->in_len)
-            (void) nh_fill(st, dp->fp);
-        remain = (size_t) (total - got);
-        res = tamp_decompressor_decompress(&st->dec, (unsigned char *) buf + got,
-                                           remain, &out_written,
-                                           st->inbuf + st->in_pos,
-                                           st->in_len - st->in_pos, &in_consumed);
-        st->in_pos += in_consumed;
-        got += out_written;
-        if (res < 0)
-            break;
-        if (out_written == 0 && in_consumed == 0)
+        st->dec.dest = out + got;
+        st->dec.dest_limit = out + total;
+        res = uzlib_uncompress(&st->dec);
+        got = (unsigned long) (st->dec.dest - out);
+        if (res == UZLIB_DONE || res < 0)
             break;
     }
     st->upos += got;
@@ -391,9 +366,9 @@ dlb_ftell(dlb *dp)
 /*
  * Serve a DLB entry as a stdio FILE*, for the one reader that wants stdio
  * rather than the dlb_* calls - the symbol-set parser reads "symbols" with
- * fgets().  funopen's read hook streams from the Tamp decoder and its close
- * hook releases the dlb handle, so the file is never copied whole into
- * memory; only the decoder window is held, as for any other entry.
+ * fgets().  funopen's read hook streams from the inflater and its close hook
+ * releases the dlb handle, so the file is never copied whole into memory;
+ * only the decoder window is held, as for any other entry.
  */
 static int
 nh_memread(void *cookie, char *buf, int len)
