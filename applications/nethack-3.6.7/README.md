@@ -4,8 +4,8 @@ Source: [NetHack/NetHack](https://github.com/NetHack/NetHack), tag
 `NetHack-3.6.7_Released`, commit
 `ed600d9f0f3c37677418f0150f59363ca641f3dc`. The recipe applies configuration
 changes in a private generated source tree and adds the CMake manifest,
-compatibility header, platform adapters, Tamp decompressor and a replacement
-data librarian. Upstream game C files and the supplied Git checkout remain
+compatibility header, platform adapters, the Tamp codec and a replacement data
+librarian. Upstream game C files and the supplied Git checkout remain
 unchanged. Keep the upstream `dat/license` with distributions; it is included
 in the FAT image.
 
@@ -17,7 +17,7 @@ dropping every optional file still leaves more data than the chip has room for.
 So the read-only data is compressed, which is what makes the port fit:
 
 - Every file NetHack reads through its data librarian (`dungeon`, the level
-  files, `quest.dat`, the encyclopedia `data`, rumors, oracles, the help
+  descriptions, `quest.dat`, the encyclopedia `data`, rumors, oracles, the help
   screens, `bogusmon`/`engrave`/`epitaph`, `options`) is compressed with
   [Tamp](https://github.com/BrianPugh/tamp), whose decoder is about 2 KB of
   code and needs only a 1-4 KB window per open file.
@@ -57,6 +57,9 @@ Level files drop from about 20-30 KB to about 1.4-8 KB (roughly 8x), so about
 volume filled after a few levels, the level write failed as a short write, and
 NetHack panicked with an empty reason line (the panic save could not be written
 either, so `NH_abort()` ran before the reason was printed).
+
+Save/restore has been exercised on hardware across a power cycle, and a game has
+descended past dungeon level 10 with no volume trouble.
 
 ## Build
 
@@ -190,6 +193,7 @@ layout. Hardware reboot is the default. Read the
 before enabling soft reboot.
 
 This recipe builds ARM images and runs the host data-library round-trip check.
-It has been run on a Pico: it boots, creates a character and plays. Save/restore
-across power cycles and peak heap use over a long game remain unmeasured; the
-heap budget is the tightest part of the port.
+It has been run on a Pico: it boots, creates a character, plays, and
+save/restore across a power cycle works -- a game has reached dungeon level 10
+with the level/save volume still comfortable. Peak heap use over a long game
+remains unmeasured; the heap budget is the tightest part of the port.
