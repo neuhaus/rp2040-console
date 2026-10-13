@@ -552,3 +552,46 @@
  STATIC_OVL void
  def_minit()
  {
+--- pristine/include/permonst.h
++++ edited/include/permonst.h
+@@ -64,7 +64,7 @@
+ #endif
+ };
+ 
+-extern NEARDATA struct permonst mons[]; /* the master list of monster types */
++extern NEARDATA const struct permonst mons[]; /* the master list of monster types */
+ 
+ #define VERY_SLOW 3
+ #define SLOW_SPEED 9
+--- pristine/src/monst.c
++++ edited/src/monst.c
+@@ -101,7 +101,7 @@
+  */
+ 
+ #ifndef SPLITMON_2
+-NEARDATA struct permonst mons[] = {
++NEARDATA const struct permonst mons[] = {
+     /*
+      * ants
+      */
+--- pristine/include/func_tab.h
++++ edited/include/func_tab.h
+@@ -21,6 +21,6 @@
+     const char *f_text;
+ };
+ 
+-extern struct ext_func_tab extcmdlist[];
++extern const struct ext_func_tab extcmdlist[];
+ 
+ #endif /* FUNC_TAB_H */
+--- pristine/src/cmd.c
++++ edited/src/cmd.c
+@@ -3352,7 +3352,7 @@
+ }
+ 
+ /* ordered by command name */
+-struct ext_func_tab extcmdlist[] = {
++const struct ext_func_tab extcmdlist[] = {
+     { '#', "#", "perform an extended command",
+             doextcmd, IFBURIED | GENERALCMD },
+     { M('?'), "?", "list all extended commands",

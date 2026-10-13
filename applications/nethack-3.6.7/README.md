@@ -173,8 +173,11 @@ The build generates all game data, checks host/ARM sizes and offsets, validates
 firmware/heap/stack bounds, checks FAT with fsck and verifies UF2 addresses and
 family IDs. `HEAP_END=0x2003c000` leaves 24 KB above the heap for stack/SDK
 scratch; actual stack peaks are unmeasured. NetHack's own static data is large
-(about 171 KB, most of it the mutable monster and object tables), so the heap
-budget is smaller than on 3.1.3; peak heap use is unmeasured. The manifest uses
+(about 149 KB), so the heap budget (about 91 KB) is smaller than on 3.1.3; peak
+heap use is unmeasured. The two biggest read-only tables, `mons[]` (~21 KB) and
+`extcmdlist[]` (~3 KB), are declared `const` by the patch so the toolchain
+places them in flash (XIP) rather than SRAM; only tables the game actually
+writes (`objects[]`, `artilist[]`, options) stay in RAM. The manifest uses
 `LEGACY_C`, `LEGACY_TIME32` and `RENAMES panic=nh_panic`.
 
 The configuration enables `NO_FILE_LINKS` with `LOCKDIR="/"`, so NetHack
