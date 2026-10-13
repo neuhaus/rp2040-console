@@ -171,9 +171,16 @@ char *tgetstr(const char *id, char **area)
 }
 
 /*
- * Emit a termcap string. The real tputs() understands padding such as
- * "$<50>"; we have none, so this is a plain copy to the caller's
- * putc.
+ * Emit a termcap string.
+ *
+ * A capability may begin with a padding specification: decimal digits,
+ * an optional fractional part introduced by '.', and an optional '*'.
+ * A real tputs() turns that into pad characters.  NetHack leans on this:
+ * when the "null" option is on (the default) tty_delay_output() calls
+ * tputs("50", ...) to pause for the animation of thrown objects.  A
+ * plain copy would print the literal characters "50" on the screen every
+ * time, which is what the screen log showed, so consume the spec here.
+ * PC is zero, so the padding itself produces no output on the USB link.
  */
 int tputs(const char *str, int affcnt, int (*putc_fn)(int))
 {
@@ -184,7 +191,29 @@ int tputs(const char *str, int affcnt, int (*putc_fn)(int))
     if (str == NULL)
         return -1;
 
-    for (p = str; *p != '\0'; p++)
+    p = str;
+
+    /* terminfo-style delay, "$<n>" */
+    if (p[0] == '$' && p[1] == '<') {
+        const char *end = strchr(p + 2, '>');
+        if (end != NULL)
+            p = end + 1;
+    }
+
+    /* termcap-style delay */
+    if (*p >= '0' && *p <= '9') {
+        while (*p >= '0' && *p <= '9')
+            p++;
+        if (*p == '.') {
+            p++;
+            while (*p >= '0' && *p <= '9')
+                p++;
+        }
+        if (*p == '*')
+            p++;
+    }
+
+    for (; *p != '\0'; p++)
         (void)putc_fn((unsigned char)*p);
 
     return 0;

@@ -460,6 +460,11 @@ These are the ones that cost time to find, in rough order of how much they cost.
 - **`termcap`'s `ospeed` is a padding index, not a baud rate.** It is reported as
   `B9600`'s BSD code. A program that indexes a table by it will read out of bounds
   if given a number like 115200.
+- **`tputs()` has to consume padding.** A termcap capability may begin with a
+  padding count (terminfo spells it `$<...>`), and NetHack's `null` option leans
+  on that for animation delays: `tty_delay_output()` calls `tputs("50")`. A
+  `tputs()` that copies its argument verbatim paints a literal `50` on the
+  screen, so the shim strips the specification and emits only the rest.
 - **`ffconf.h` uses unconditional `#define`s**, so `-D` overrides of FatFs options
   are silently no-ops. Change the header or provide your own on the include path.
 - **The program is not allowed to buffer the console.** `setbuf()` and

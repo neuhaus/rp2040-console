@@ -12,20 +12,26 @@ if(NETHACK_SOFT_REBOOT)
 endif()
 
 # NetHack startup options for this image, handed to the game as
-# NETHACKOPTIONS.  The recipe ships none: an empty value keeps upstream's
-# defaults, and choices personal to a build (a symbol set, a keyboard layout)
+# NETHACKOPTIONS.  The recipe ships none of its own beyond `color` (added
+# below), and choices personal to a build (a symbol set, a keyboard layout)
 # are passed per build rather than committed.  build.py sets this from
 # --nethack-options, e.g. "symset:DECgraphics,number_pad:-1".
 set(NETHACK_OPTIONS "" CACHE STRING
-        "NETHACKOPTIONS baked into the image; empty for upstream defaults")
+        "Extra NETHACKOPTIONS for this image; appended after the default")
 
 # NetHack's whoami() seeds the character name from $USER or $LOGNAME and then
 # skips the "Who are you?" prompt, so neither is set here: the player names
 # their own character.  HOME stays for NetHack's config-file lookup.
 set(_game_env TERM=xterm HOME=/)
+# `color` is off by default in a Unix tty build, because upstream expects to
+# run on terminals of every stripe; the board always drives a colour-capable
+# ANSI emulator, so turn it on.  A per-build --nethack-options value is
+# appended after it and can override it, e.g. "!color".
+set(_nethack_options "color")
 if(NETHACK_OPTIONS)
-    list(APPEND _game_env "NETHACKOPTIONS=${NETHACK_OPTIONS}")
+    string(APPEND _nethack_options ",${NETHACK_OPTIONS}")
 endif()
+list(APPEND _game_env "NETHACKOPTIONS=${_nethack_options}")
 
 include(${RP2040_CONSOLE_DIR}/cmake/rp2040-console.cmake)
 

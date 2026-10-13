@@ -95,8 +95,11 @@ python3 applications/nethack-3.6.7/build.py \
     --nethack-options 'symset:DECgraphics,number_pad:-1'
 ```
 
-The value is comma-separated, exactly as NetHack's `NETHACKOPTIONS` is. Two it
-is often asked for:
+The value is comma-separated, exactly as NetHack's `NETHACKOPTIONS` is. The
+image already turns `color` on: upstream leaves colour off in a Unix tty build,
+because it expects terminals of every stripe, while this board always drives a
+colour-capable ANSI emulator. Anything passed here is appended after `color`,
+so a build can still ask for `!color`. Two are often asked for:
 
 - `symset:DECgraphics` selects the DEC line-drawing symbol set from the
   `symbols` file. This is the set behind the old `DECgraphics` option; in 3.6.7
@@ -105,8 +108,8 @@ is often asked for:
 - `number_pad:-1` is NetHack's "German keyboard" setting: vi-keys with the `y`
   and `z` directions swapped, for a QWERTZ layout.
 
-These are personal choices, so the recipe ships none of them and a default
-build has upstream's defaults. `build.py` always passes the option through
+These two are personal choices, so the recipe ships neither and a default build
+leaves them at upstream's values. `build.py` always passes the option through
 (empty when the flag is absent), so a later build without the flag is clean
 again rather than keeping the previous value.
 
