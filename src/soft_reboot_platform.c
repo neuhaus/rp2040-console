@@ -28,6 +28,7 @@ void rp2040_soft_restore(void)
     console_process_reset();
     console_files_begin_session();
     console_reset_terminal();
+    console_rawout("\033(B\033>");
     console_discard_input();
 }
 

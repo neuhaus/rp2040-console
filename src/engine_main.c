@@ -121,6 +121,8 @@ static void engine_start(void)
      */
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
+    /* A host terminal survives firmware changes and may retain DEC G1 shift. */
+    console_rawout("\033c\033(B\033>");
 
 #ifdef RP2040_CONSOLE_UART_STDIN
     console_uart_stdin_init();

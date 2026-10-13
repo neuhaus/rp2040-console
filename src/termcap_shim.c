@@ -40,6 +40,14 @@ static char s_nd[] = "\033[C";
 static char s_up[] = "\033[A";
 static char s_so[] = "\033[7m";
 static char s_se[] = "\033[m";
+/* Select DEC drawing in G0 and restore ASCII using only ESC sequences.
+ * Avoid SI (Ctrl-O): screen serial ports can process it as VDISCARD when
+ * IEXTEN is enabled, consuming it and producing unsolicited input. */
+static char s_as[] = "\033(0";
+static char s_ae[] = "\033(B";
+/* The console accepts ordinary keys, not application-keypad escape codes.
+ * Supply both capabilities so clients do not invent an ESC= fallback. */
+static char s_keypad[] = "\033>";
 
 /*
  * Terminal metrics: what the game is told it has to draw into, and what
@@ -138,6 +146,12 @@ char *tgetstr(const char *id, char **area)
         return s_so;
     if (strcmp(id, "se") == 0)
         return s_se;
+    if (strcmp(id, "as") == 0)
+        return s_as;
+    if (strcmp(id, "ae") == 0)
+        return s_ae;
+    if (strcmp(id, "ks") == 0 || strcmp(id, "ke") == 0)
+        return s_keypad;
 
     /*
      * Absent on purpose: "ti"/"ve"/"vs"/"te"/"xd". The game treats
