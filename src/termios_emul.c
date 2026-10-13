@@ -42,7 +42,7 @@
  * programs ask, and because termcap's padding calculations index a table by
  * it, which wants the small BSD code rather than a number of bits per second.
  */
-static struct termios console_tio = {
+static const struct termios default_tio = {
     /* c_iflag */ ICRNL | IXON,
     /* c_oflag */ OPOST | ONLCR,
     /* c_cflag */ B9600 | CS8 | CREAD | CLOCAL,
@@ -52,13 +52,70 @@ static struct termios console_tio = {
     /* c_ospeed */ B9600,
 };
 
+static struct termios console_tio;
+static int terminal_initialized;
+
+void console_reset_terminal(void)
+{
+    console_tio = default_tio;
+    terminal_initialized = 1;
+}
+
+static void ensure_terminal(void)
+{
+    if (!terminal_initialized) console_reset_terminal();
+}
+
 struct termios *console_termios(void)
 {
+    ensure_terminal();
     return &console_tio;
+}
+
+speed_t cfgetispeed(const struct termios *t)
+{
+    if (t == NULL) { errno = EFAULT; return 0; }
+    return t->c_ispeed;
+}
+
+speed_t cfgetospeed(const struct termios *t)
+{
+    if (t == NULL) { errno = EFAULT; return 0; }
+    return t->c_ospeed;
+}
+
+static int valid_speed(const struct termios *t, speed_t speed)
+{
+    if (t == NULL) { errno = EFAULT; return 0; }
+    if (speed > B115200) { errno = EINVAL; return 0; }
+    return 1;
+}
+
+int cfsetispeed(struct termios *t, speed_t speed)
+{
+    if (!valid_speed(t, speed)) return -1;
+    t->c_ispeed = speed == B0 ? t->c_ospeed : speed;
+    return 0;
+}
+
+int cfsetospeed(struct termios *t, speed_t speed)
+{
+    if (!valid_speed(t, speed)) return -1;
+    t->c_ospeed = speed;
+    t->c_cflag = (t->c_cflag & ~CBAUD) | speed;
+    return 0;
+}
+
+int cfsetspeed(struct termios *t, speed_t speed)
+{
+    if (cfsetospeed(t, speed) != 0) return -1;
+    t->c_ispeed = speed;
+    return 0;
 }
 
 int tcgetattr(int fd, struct termios *t)
 {
+    ensure_terminal();
     (void)fd;
 
     if (t == NULL) {
@@ -72,6 +129,7 @@ int tcgetattr(int fd, struct termios *t)
 
 int tcsetattr(int fd, int actions, const struct termios *t)
 {
+    ensure_terminal();
     (void)fd;
     (void)actions;        /* nothing is queued, so there is nothing to drain */
 

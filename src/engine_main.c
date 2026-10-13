@@ -36,6 +36,9 @@
 #include "probes.h"
 #include "restart.h"
 #include "clock.h"
+#ifdef RP2040_CONSOLE_SOFT_REBOOT
+#include "rp2040-soft-reboot.h"
+#endif
 
 static void pid_init(void);
 
@@ -164,14 +167,28 @@ extern int rp2040_console_game_main(int argc, char **argv);
  */
 int main(int argc, char **argv)
 {
+#ifndef RP2040_CONSOLE_SOFT_REBOOT
     static char *console_argv[] = { RP2040_CONSOLE_ARGV0, NULL };
+#endif
 
     (void)argc;
     (void)argv;
 
     engine_start();
 
+#ifdef RP2040_CONSOLE_SOFT_REBOOT
+    for (;;) {
+        /* New stack frames and argv each time; USB/clock/storage init run once. */
+        char name[] = RP2040_CONSOLE_ARGV0;
+        char *argv[] = { name, NULL };
+        restart_note_boot();
+        pid_init();
+        int status = rp2040_soft_run(1, argv);
+        restart_wait_soft(status);
+    }
+#else
     return rp2040_console_game_main(1, console_argv);
+#endif
 }
 
 /*
@@ -187,7 +204,9 @@ static void pid_init(void)
 
     if (getentropy(&r, sizeof(r)) != 0 || r == 0)
         r = (uint32_t)time_us_64();
-    boot_pid = (int)(r % 32767u) + 1;
+    int next = (int)(r % 32767u) + 1;
+    if (next == boot_pid) next = next % 32767 + 1;
+    boot_pid = next;
 }
 
 int getpid(void)

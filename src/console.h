@@ -32,6 +32,8 @@ int console_read(void *buf, size_t count);
  * tcsetattr() more than a call that returns zero.
  */
 struct termios *console_termios(void);
+void console_reset_terminal(void);
+void console_discard_input(void);
 
 /*
  * Give a host this long, in milliseconds, to have the serial port open before

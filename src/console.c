@@ -28,6 +28,17 @@
 
 #include "console.h"
 
+/* Linker --wrap entry points have the same ABI as their libc originals. */
+extern int __real_setvbuf(FILE *stream, char *buf, int mode, size_t size);
+extern void __real_setbuf(FILE *stream, char *buf);
+
+void console_discard_input(void)
+{
+    /* Drain existing input, bounded even if a noisy UART keeps transmitting. */
+    for (unsigned i = 0; i < 1024; ++i)
+        if (stdio_getchar_timeout_us(0) < 0) break;
+}
+
 /*
  * The input processing a line discipline used to do, in one place.
  *

@@ -19,10 +19,8 @@
  *   while their names are still unshadowed. A rename defined after that point
  *   cannot reach into a declaration in <stdlib.h> and quietly rewrite it.
  *
- *   It applies to the engine's own sources too, which is why nothing here
- *   changes the meaning of a call the engine itself relies on. The engine
- *   reads input through stdio_getchar() and getchar_timeout_us(), not through
- *   the names redefined below.
+ *   It applies only to program C/C++ sources, including generated sources.
+ *   Engine, FatFs and SDK sources keep their native declarations and names.
  */
 
 #include <sys/types.h>
@@ -32,6 +30,36 @@
 #include <signal.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/times.h>
+#include <utime.h>
+#include <pico/stdlib.h>
+#include <rp2040-console-system.h>
+#include <rp2040-time32.h>
+#ifdef RP2040_CONSOLE_SOFT_REBOOT
+#include <rp2040-soft-reboot.h>
+#define exit rp2040_soft_exit
+#define _exit rp2040_soft_immediate_exit
+#define _Exit rp2040_soft_immediate_exit
+#define atexit rp2040_soft_atexit
+#endif
+
+/* Opt-in legacy time ABI, after native system/SDK declarations. These macros
+ * affect application declarations and calls, never libc struct layouts.
+ * Programs comparing stat timestamps still see native struct stat fields. */
+#ifdef RP2040_CONSOLE_LEGACY_TIME32
+#define time_t rp2040_time32_t
+#define time rp2040_time32
+#define localtime rp2040_localtime32
+#define gmtime rp2040_gmtime32
+#define localtime_r rp2040_localtime32_r
+#define gmtime_r rp2040_gmtime32_r
+#define ctime rp2040_ctime32
+#define ctime_r rp2040_ctime32_r
+#define mktime rp2040_mktime32
+#define difftime rp2040_difftime32
+#endif
 
 /*
  * Input: getchar() with the tty's input processing applied.

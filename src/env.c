@@ -115,3 +115,10 @@ void env_init(void)
     for (int i = 0; declared[i].name != NULL; i++)
         setenv(declared[i].name, declared[i].value, 1);
 }
+
+void env_reset(void)
+{
+    memset(slots, 0, sizeof(slots));
+    slots_used = 0;
+    env_init();
+}

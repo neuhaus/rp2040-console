@@ -38,6 +38,7 @@
 get_filename_component(RP2040_CONSOLE_PATH "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 set(RP2040_CONSOLE_SRC     "${RP2040_CONSOLE_PATH}/src")
 set(RP2040_CONSOLE_INCLUDE "${RP2040_CONSOLE_PATH}/include")
+include("${CMAKE_CURRENT_LIST_DIR}/host-tools.cmake")
 
 # --- before pico_sdk_init() -------------------------------------------
 #
@@ -61,6 +62,7 @@ endif()
 #
 
 pico_sdk_init()
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 #
 # The behaviour this engine relies on is the SDK's, not its own: which libc
@@ -177,7 +179,7 @@ set(RP2040_CONSOLE_ROWS "24" CACHE STRING
 #                 something else in the link; see the prefix header
 #
 function(rp2040_console_game)
-    set(options LEGACY_C)
+    set(options LEGACY_C LEGACY_TIME32 SOFT_REBOOT)
     set(oneValueArgs
             NAME
             ROOT
@@ -186,6 +188,8 @@ function(rp2040_console_game)
             FS_OFFSET
             FS_SIZE
             HEAP_END
+            FLASH_SIZE
+            STACK_RESERVE
             COLS
             ROWS)
     set(multiValueArgs
@@ -195,6 +199,7 @@ function(rp2040_console_game)
             DEFINES
             ENV
             RENAMES
+            SYSTEM_HEADERS
             DATA_FILES
             EMPTY_FILES
             DATA_DIRS)
@@ -211,10 +216,44 @@ function(rp2040_console_game)
     endif()
 
     foreach(v FS_OFFSET FS_SIZE COLS ROWS)
-        if(NOT CG_${v})
+        if("${CG_${v}}" STREQUAL "")
             set(CG_${v} ${RP2040_CONSOLE_${v}})
         endif()
     endforeach()
+
+    # Each target owns its generated manifest and prefix headers.
+    set(_config_dir "${CMAKE_CURRENT_BINARY_DIR}/${CG_NAME}-console")
+    file(MAKE_DIRECTORY "${_config_dir}")
+    if("${CG_FLASH_SIZE}" STREQUAL "")
+        if(PICO_FLASH_SIZE_BYTES)
+            set(CG_FLASH_SIZE "${PICO_FLASH_SIZE_BYTES}")
+        elseif(PICO_DEFAULT_FLASH_SIZE_BYTES)
+            set(CG_FLASH_SIZE "${PICO_DEFAULT_FLASH_SIZE_BYTES}")
+        else()
+            set(CG_FLASH_SIZE "2 * 1024 * 1024")
+        endif()
+    endif()
+    math(EXPR CG_FLASH_SIZE "${CG_FLASH_SIZE}")
+    math(EXPR _fs_end "${CG_FS_OFFSET} + ${CG_FS_SIZE}")
+    math(EXPR _fs_offset "${CG_FS_OFFSET}")
+    math(EXPR _fs_size "${CG_FS_SIZE}")
+    math(EXPR _offset_remainder "${_fs_offset} % 4096")
+    math(EXPR _size_remainder "${_fs_size} % 4096")
+    if(_fs_offset LESS_EQUAL 0 OR _fs_size LESS_EQUAL 0 OR
+       _fs_end GREATER CG_FLASH_SIZE OR _offset_remainder OR _size_remainder)
+        message(FATAL_ERROR "${CG_NAME}: FAT region must fit flash and use positive 4 KB-aligned offset/size")
+    endif()
+    if(NOT CG_STACK_RESERVE)
+        set(CG_STACK_RESERVE 0)
+    endif()
+    set(_system_headers "/* Native declarations, before application renames. */\n")
+    foreach(header IN LISTS CG_SYSTEM_HEADERS)
+        if(NOT header MATCHES "^[A-Za-z0-9_./+-]+$")
+            message(FATAL_ERROR "Invalid SYSTEM_HEADERS entry '${header}'")
+        endif()
+        string(APPEND _system_headers "#include <${header}>\n")
+    endforeach()
+    file(WRITE "${_config_dir}/rp2040-console-system.h" "${_system_headers}")
 
     # --- the game's environment ----------------------------------------
     #
@@ -234,7 +273,7 @@ function(rp2040_console_game)
         string(APPEND _env_table "    { \"${_name}\", \"${_value}\" },\n")
     endforeach()
 
-    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/rp2040_console_env.inc"
+    file(WRITE "${_config_dir}/rp2040_console_env.inc"
             "/* Generated from the game's manifest. Do not edit. */\n"
             "${_env_table}")
 
@@ -262,7 +301,7 @@ function(rp2040_console_game)
         string(APPEND _renames "#define ${_from} ${_to}\n")
     endforeach()
 
-    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/rp2040-console-renames.h"
+    file(WRITE "${_config_dir}/rp2040-console-renames.h"
             "/* Generated from the game's manifest. Do not edit.\n"
             " *\n"
             " * Included by rp2040-console.h after the C library headers have been\n"
@@ -281,6 +320,8 @@ function(rp2040_console_game)
             "${RP2040_CONSOLE_SRC}/env.c"
             "${RP2040_CONSOLE_SRC}/entropy.c"
             "${RP2040_CONSOLE_SRC}/syscalls.c"
+            "${RP2040_CONSOLE_SRC}/heap.c"
+            "${RP2040_CONSOLE_SRC}/time32.c"
             "${RP2040_CONSOLE_SRC}/fileio.c"
             "${RP2040_CONSOLE_SRC}/storage.c"
             "${RP2040_CONSOLE_SRC}/flash_fs.c"
@@ -298,8 +339,8 @@ function(rp2040_console_game)
             )
 
     target_include_directories(${CG_NAME} PRIVATE
+            "${_config_dir}"
             "${CMAKE_CURRENT_BINARY_DIR}"
-            ${CG_INCLUDE_DIRS}
             )
 
     # FatFs headers first: ff.h and the game's own <sys/stat.h> disagree
@@ -332,10 +373,86 @@ function(rp2040_console_game)
     # <stdio.h> fails too, and fails somewhere that points nowhere near the
     # cause.
     #
-    foreach(src IN LISTS CG_SOURCES)
-        set_source_files_properties("${src}" PROPERTIES
-                COMPILE_OPTIONS "-include;${RP2040_CONSOLE_INCLUDE}/rp2040-console.h")
+    set(_program_sources ${CG_SOURCES} ${CG_GENERATED})
+    set(_program_options -include "${RP2040_CONSOLE_INCLUDE}/rp2040-console.h")
+    if(CG_SOFT_REBOOT)
+        list(APPEND _program_options -fno-common)
+    endif()
+    foreach(dir IN LISTS CG_INCLUDE_DIRS)
+        get_filename_component(dir "${dir}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+        # Quoted game headers win over compatibility headers with the same name.
+        # Angle-bracket system headers continue to use the platform ABI first.
+        list(APPEND _program_options -iquote "${dir}" -I "${dir}")
     endforeach()
+    foreach(src IN LISTS _program_sources)
+        if(src MATCHES "[.](c|C|cc|cpp|cxx)$")
+            foreach(option IN LISTS _program_options)
+                set_property(SOURCE "${src}" APPEND PROPERTY COMPILE_OPTIONS
+                        "$<$<STREQUAL:$<TARGET_PROPERTY:NAME>,${CG_NAME}>:${option}>")
+            endforeach()
+            if(CG_LEGACY_TIME32)
+                set_property(SOURCE "${src}" APPEND PROPERTY COMPILE_DEFINITIONS
+                        "$<$<STREQUAL:$<TARGET_PROPERTY:NAME>,${CG_NAME}>:RP2040_CONSOLE_LEGACY_TIME32=1>")
+            endif()
+        endif()
+    endforeach()
+
+    if(CG_SOFT_REBOOT)
+        if(NOT PICO_PLATFORM STREQUAL "rp2040" OR PICO_COPY_TO_RAM)
+            message(FATAL_ERROR "SOFT_REBOOT requires RP2040 with XIP (PICO_COPY_TO_RAM=0)")
+        endif()
+        set(_declared_sources "")
+        foreach(src IN LISTS _program_sources)
+            get_source_file_property(_language "${src}" LANGUAGE)
+            if(_language AND NOT _language STREQUAL "C")
+                message(FATAL_ERROR "SOFT_REBOOT only supports C translation units: ${src} (${_language})")
+            endif()
+            if(NOT src MATCHES "[.](c|h|inc)$")
+                message(FATAL_ERROR "SOFT_REBOOT requires declared C sources/headers; unsupported source: ${src}")
+            endif()
+            get_filename_component(src "${src}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+            string(APPEND _declared_sources "${src}\n")
+        endforeach()
+        foreach(rename IN LISTS CG_RENAMES)
+            if(rename MATCHES "^(exit|_exit|_Exit|atexit)=")
+                message(FATAL_ERROR "SOFT_REBOOT owns the exit/atexit names; remove ${rename}")
+            endif()
+        endforeach()
+        file(WRITE "${_config_dir}/program-sources.txt" "${_declared_sources}")
+        execute_process(COMMAND "${Python3_EXECUTABLE}"
+                "${RP2040_CONSOLE_PATH}/tools/configure-soft-reboot.py"
+                --sdk "${PICO_SDK_PATH}" --output "${_config_dir}/section_default_data.incl"
+                RESULT_VARIABLE _linker_result)
+        if(NOT _linker_result EQUAL 0)
+            message(FATAL_ERROR "Could not configure SOFT_REBOOT linker ranges")
+        endif()
+        pico_add_linker_script_override_path(${CG_NAME} "${_config_dir}" FILES section_default_data.incl)
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+                "${RP2040_CONSOLE_PATH}/tools/configure-soft-reboot.py"
+                "${PICO_SDK_PATH}/src/rp2_common/pico_standard_link/script_include/section_default_data.incl")
+        set(_launcher "${Python3_EXECUTABLE}" "${RP2040_CONSOLE_PATH}/tools/tag-program-state.py"
+                --sources "${_config_dir}/program-sources.txt" --objcopy "${CMAKE_OBJCOPY}"
+                --objdump "${CMAKE_OBJDUMP}" --)
+        if(CMAKE_C_COMPILER_LAUNCHER)
+            list(APPEND _launcher ${CMAKE_C_COMPILER_LAUNCHER})
+        endif()
+        set_property(TARGET ${CG_NAME} PROPERTY C_COMPILER_LAUNCHER ${_launcher})
+        target_sources(${CG_NAME} PRIVATE
+                "${RP2040_CONSOLE_SRC}/soft_reboot.c"
+                "${RP2040_CONSOLE_SRC}/soft_reboot_libc.c"
+                "${RP2040_CONSOLE_SRC}/soft_reboot_platform.c")
+        target_compile_definitions(${CG_NAME} PRIVATE RP2040_CONSOLE_SOFT_REBOOT=1)
+        foreach(allocator _malloc_r _calloc_r _realloc_r _free_r _tzset_r _tzset_unlocked_r _setlocale_r)
+            target_link_options(${CG_NAME} PRIVATE "-Wl,--wrap=${allocator}")
+        endforeach()
+        # Changes to the launcher must also recompile program objects.
+        foreach(src IN LISTS _program_sources)
+            if(src MATCHES "[.]c$")
+                set_property(SOURCE "${src}" APPEND PROPERTY OBJECT_DEPENDS
+                        "${RP2040_CONSOLE_PATH}/tools/tag-program-state.py")
+            endif()
+        endforeach()
+    endif()
 
     target_compile_definitions(${CG_NAME} PRIVATE
             PICO_NO_BINARY_INFO=1
@@ -403,9 +520,9 @@ function(rp2040_console_game)
         # files.
         #
         target_compile_options(${CG_NAME} PRIVATE
-                -Wno-int-conversion
-                -Wno-implicit-int
-                -Wno-implicit-function-declaration
+                $<$<COMPILE_LANGUAGE:C>:-Wno-int-conversion>
+                $<$<COMPILE_LANGUAGE:C>:-Wno-implicit-int>
+                $<$<COMPILE_LANGUAGE:C>:-Wno-implicit-function-declaration>
                 -Wno-unused-variable
                 -Wno-unused-but-set-variable
                 -Wno-parentheses
@@ -477,10 +594,14 @@ function(rp2040_console_game)
             hardware_spi
             )
 
-    # No floating point in a terminal game. Claiming the double routines
-    # would spend code and RAM that nothing uses.
+    # The legacy difftime adapter uses real double arithmetic. Unreferenced
+    # routines are still discarded; native terminal builds retain no-float.
     pico_set_float_implementation(${CG_NAME} none)
-    pico_set_double_implementation(${CG_NAME} none)
+    if(CG_LEGACY_TIME32)
+        pico_set_double_implementation(${CG_NAME} pico)
+    else()
+        pico_set_double_implementation(${CG_NAME} none)
+    endif()
 
     #
     # These set target properties, so the target must already exist, and the
@@ -495,7 +616,19 @@ function(rp2040_console_game)
     pico_enable_stdio_usb(${CG_NAME} 1)
     pico_enable_stdio_uart(${CG_NAME} 0)
 
+    pico_override_flash_size(${CG_NAME} ${CG_FLASH_SIZE})
+    # Force the SDK's PROVIDE symbol into the symbol table for validation.
+    target_link_options(${CG_NAME} PRIVATE "-Wl,--undefined=__flash_binary_end")
     pico_add_extra_outputs(${CG_NAME})
+    add_custom_command(TARGET ${CG_NAME} POST_BUILD
+            COMMAND "${Python3_EXECUTABLE}" "${RP2040_CONSOLE_PATH}/tools/check-memory.py"
+                    --elf "$<TARGET_FILE:${CG_NAME}>" --nm "${CMAKE_NM}"
+                    --flash-size "${CG_FLASH_SIZE}" --fs-offset "${CG_FS_OFFSET}"
+                    --fs-size "${CG_FS_SIZE}" --stack-reserve "${CG_STACK_RESERVE}"
+                    --copy-to-ram "$<BOOL:${PICO_COPY_TO_RAM}>"
+            VERBATIM)
+    set_property(TARGET ${CG_NAME} APPEND PROPERTY LINK_DEPENDS
+            "${RP2040_CONSOLE_PATH}/tools/check-memory.py")
 
     # --- the volume ------------------------------------------------------
     #
@@ -517,17 +650,28 @@ function(rp2040_console_game)
     endif()
 
     set(_manifest "# Generated by rp2040-console from ${CG_NAME}'s manifest.\n")
+    foreach(path IN LISTS CG_DATA_FILES CG_EMPTY_FILES CG_DATA_DIRS ITEMS "${_root}")
+        if(path MATCHES "[|\t\r\n#]")
+            message(FATAL_ERROR "Volume paths cannot contain tabs, newlines, '#' or '|': ${path}")
+        endif()
+    endforeach()
+    foreach(path IN LISTS CG_DATA_FILES CG_EMPTY_FILES CG_DATA_DIRS)
+        if(path MATCHES "^/|(^|/)[.][.](/|$)")
+            message(FATAL_ERROR "Volume destinations must be relative without '..': ${path}")
+        endif()
+    endforeach()
     string(APPEND _manifest "label ${CG_VOLUME_NAME}\n")
     string(APPEND _manifest "offset ${CG_FS_OFFSET}\n")
-    string(APPEND _manifest "size ${CG_FS_SIZE}\n")
+    string(APPEND _manifest "size ${CG_FS_SIZE}\n"
+                        "flash_size ${CG_FLASH_SIZE}\n")
     foreach(f IN LISTS CG_DATA_FILES)
-        string(APPEND _manifest "file ${_root}/${f} ${f}\n")
+        string(APPEND _manifest "file\t${_root}/${f}\t${f}\n")
     endforeach()
     foreach(f IN LISTS CG_EMPTY_FILES)
-        string(APPEND _manifest "empty ${f}\n")
+        string(APPEND _manifest "empty\t${f}\n")
     endforeach()
     foreach(d IN LISTS CG_DATA_DIRS)
-        string(APPEND _manifest "dir ${d}\n")
+        string(APPEND _manifest "dir\t${d}\n")
     endforeach()
 
     set(_volume_manifest "${CMAKE_BINARY_DIR}/${CG_NAME}-volume.txt")
@@ -543,7 +687,7 @@ function(rp2040_console_game)
     # second layer of script would only add quoting. mkvolume.sh finds
     # picotool itself; set PICOTOOL to tell it where.
     #
-    add_custom_target(volume
+    add_custom_target(${CG_NAME}-volume
             COMMAND sh "${RP2040_CONSOLE_PATH}/tools/mkvolume.sh"
                     --manifest "${_volume_manifest}"
                     --out "${CMAKE_BINARY_DIR}"
@@ -551,4 +695,8 @@ function(rp2040_console_game)
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
             COMMENT "Building the FAT volume for ${CG_NAME}"
             )
+    if(NOT TARGET volume)
+        add_custom_target(volume)
+    endif()
+    add_dependencies(volume ${CG_NAME}-volume)
 endfunction()

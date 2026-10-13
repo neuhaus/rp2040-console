@@ -15,7 +15,9 @@
  * hooking the inner one misses nothing that hooking the outer one would
  * have caught - and it also catches a direct _exit().
  *
- * Restarting is a full reboot, not another call to main(). A game is a
+ * This is the default hardware reboot path. Optional SOFT_REBOOT intercepts
+ * program exits in the prefix header and uses a separate session boundary.
+ * Without that opt-in, restarting is a full reboot, not another call to main(). A game is a
  * single-shot program: it allocates a world and never gives it back, on the
  * reasonable assumption that exit() is the end. Looping main() would strand
  * another world's worth of heap each time and eventually run out, which is
@@ -31,6 +33,7 @@
 
 #include "clock.h"
 #include "restart.h"
+#include "console.h"
 
 /*
  * How long the program has to have been running for an exit() to count as
@@ -63,12 +66,10 @@ void restart_note_boot(void)
     boot_us = time_us_64();
 }
 
-void _exit(int status)
+static void wait_for_restart(int status, int soft)
 {
     uint64_t started = boot_us;
     uint64_t deadline;
-
-    (void)status;
 
     /*
      * Too young to have been a game. Say so and stop, rather than
@@ -76,7 +77,7 @@ void _exit(int status)
      * the board stays usable. started == 0 means restart_note_boot()
      * never ran, which is the worst case of this, not an exemption.
      */
-    if (started == 0 || time_us_64() - started < BOOT_GRACE_US) {
+    if (started == 0 || ((!soft || status != 0) && time_us_64() - started < BOOT_GRACE_US)) {
         printf("\nThe program stopped during startup, so it is not "
                "restarting.\nPower cycle the board to try again.\n");
         for (;;)
@@ -100,10 +101,23 @@ void _exit(int status)
 
     deadline = time_us_64() + RESTART_KEY_TIMEOUT_US;
     while (time_us_64() < deadline) {
-        if (getchar() != EOF)
+        if (stdio_getchar_timeout_us(0) >= 0)
             break;
         sleep_ms(20);
     }
+}
+
+void restart_wait_soft(int status)
+{
+    console_reset_terminal();
+    wait_for_restart(status, 1);
+    console_discard_input();
+    console_clock_persist();
+}
+
+void _exit(int status)
+{
+    wait_for_restart(status, 0);
 
     /*
      * start == 0 lets the bootrom choose, which for an image running from
@@ -116,7 +130,7 @@ void _exit(int status)
      */
     console_clock_persist();
     console_clock_stash();
-    watchdog_reboot(0, NULL, 0);
+    watchdog_reboot(0, 0, 0);
 
     /* Not reached: the watchdog fires within a millisecond. */
     for (;;)
