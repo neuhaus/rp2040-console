@@ -27,10 +27,12 @@ So the read-only data is compressed, which is what makes the port fit:
 - The files are collected into a single archive, `nhdata`, rather than left
   separate. A FAT volume rounds each file up to a whole cluster; in one file
   they cost one file's worth of slack.
-- The window is a fixed 4 KB, the same as the level and save codec. Every
-  entry is compressed with it, so the decoder allocates one 4 KB dictionary
-  per open file. A wider window would compress a little better (`data` is
-  10 KB smaller at 8 KB) but holds more RAM while a data file is open.
+- The window is chosen per entry. `build.py` probes 1-32 KB and keeps the
+  smallest for each file, and the directory records the winner, so the decoder
+  allocates just that much for each open file. The big text files read once
+  mid-game (`data`, `quest.dat`, `rumors`) take the widest, 32 KB, while a level
+  template -- decoded while a new level is being built, when free memory is
+  tightest -- stays at 1-4 KB.
 - The recipe defines `DLB` and replaces `src/dlb.c`, so NetHack's existing
   `dlb_fopen`/`dlb_fread`/`dlb_fseek` calls land on a streaming inflate.
   Seeking is emulated by decoding and discarding; a backward seek restarts the
@@ -69,7 +71,7 @@ the `SFI1_ZEROCOMP` savefile flag and the `bufon`/`bufoff` raw-front-matter
 protocol.
 
 Level files drop from about 20-30 KB to about 2-3 KB (roughly 10x), so about
-**64 levels** fit in the free space instead of about four. Without this the
+**72 levels** fit in the free space instead of about four. Without this the
 volume filled after a few levels, the level write failed as a short write, and
 NetHack panicked with an empty reason line (the panic save could not be written
 either, so `NH_abort()` ran before the reason was printed).
@@ -176,29 +178,38 @@ the lines stay in the terminal's scrollback once the game draws over them.
 
 Default outputs are under `build/nethack-3.6.7/hardware/`:
 
-- `nethack.uf2`: XIP firmware below flash offset `0x17D000` (about 1.49 MB).
-- `nethack-volume.uf2`: 524 KB FAT12 volume at `0x17D000`, ending at 2 MB.
+- `nethack.uf2`: XIP firmware below flash offset `0x17E000` (about 1.49 MB).
+- `nethack-volume.uf2`: 520 KB FAT12 volume at `0x17E000`, ending at 2 MB.
 - `nethack.elf`, `nethack.bin` and `nethack-volume.img`: inspection artifacts.
 
 The volume holds `nhdata` (the compressed library, which carries every data
 file including `symbols`), empty `record`,
 `perm`, `logfile` and `xlogfile` (NetHack locks and appends to all four, and
-`lock_file()` opens the file itself), and a `save` directory. About 330 KB of
-the 524 KB is used, leaving about **194 KB** for the levels a game has visited.
+`lock_file()` opens the file itself), and a `save` directory. About 302 KB of
+the 520 KB is used, leaving about **218 KB** for the levels a game has visited.
 The volume is FAT12 with 512-byte clusters, so the many small level files cost
 almost no slack.
 
 The split between firmware and volume is set by `FS_OFFSET`/`FS_SIZE` in the
-manifest. The volume starts at `0x17D000`, just above the firmware (about 5 KB
+manifest. The volume starts at `0x17E000`, just above the firmware (about 4 KB
 to spare); the volume's free space is what a long game has for level files, so
 raise `FS_OFFSET` only as far as the savegame budget allows.
 
 The build generates all game data, checks host/ARM sizes and offsets, validates
 firmware/heap/stack bounds, checks FAT with fsck and verifies UF2 addresses and
 family IDs. `HEAP_END=0x2003c000` leaves 24 KB above the heap for stack/SDK
-scratch; actual stack peaks are unmeasured. NetHack's own static data is large
-(about 148 KB), so the heap budget (about 92 KB) is smaller than on 3.1.3;
-peak heap use is unmeasured. The two biggest read-only tables, `mons[]` (~21 KB)
+scratch. NetHack's own static data is large (about 146 KB), so the heap budget
+(about 94 KB, the rest of SRAM below the reserve) is smaller than on 3.1.3.
+
+Both peaks are measured rather than guessed: `port/memlog.c` tracks the heap
+free low-water (`__HeapLimit - _sbrk(0)`, which is monotonic because newlib's
+arena never shrinks), and paints the stack reserve at startup to find its
+high-water mark by scanning for the first disturbed byte. It appends a line to
+`/memlog` on the volume at each level change - the peaky moment, and a line that
+survives an out-of-memory panic - and prints the session peaks as the game exits
+(from `nh_terminate`, and from `panic`). The numbers decide `HEAP_END` /
+`STACK_RESERVE`: if the stack's real peak is small, `HEAP_END` can rise and hand
+the difference to the heap. The two biggest read-only tables, `mons[]` (~21 KB)
 and `extcmdlist[]` (~3 KB), are declared `const` by the patch so the toolchain
 places them in flash (XIP) rather than SRAM; only tables the game actually
 writes (`objects[]`, `artilist[]`, options) stay in RAM. The manifest uses

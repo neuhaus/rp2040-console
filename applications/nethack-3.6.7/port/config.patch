@@ -835,3 +835,34 @@
  E void NDECL(set_playmode);
  E int FDECL(sym_val, (const char *));
  E int FDECL(query_color, (const char *));
+
+--- pristine/src/do.c
++++ edited/src/do.c
+@@ -1467,6 +1467,8 @@
+         oinit(); /* reassign level dependent obj probabilities */
+     }
+     reglyph_darkroom();
++    /* the new level is built or loaded: sample the heap and stack peaks */
++    nh_mem_transition((int) u.uz.dlevel, (long) moves);
+     u.uinwater = 0;
+     /* do this prior to level-change pline messages */
+     vision_reset();         /* clear old level's line-of-sight */
+--- pristine/src/end.c
++++ edited/src/end.c
+@@ -577,6 +577,8 @@
+     VA_START(str);
+     VA_INIT(str, char *);
+ 
++    /* print the RAM peaks before a panic loses the console */
++    nh_mem_report();
+     if (program_state.panicking++)
+         NH_abort(); /* avoid loops - this should never happen*/
+ 
+@@ -1708,6 +1710,7 @@
+ nh_terminate(status)
+ int status;
+ {
++    nh_mem_report();
+     program_state.in_moveloop = 0; /* won't be returning to normal play */
+ #ifdef MAC
+     getreturn("to exit");

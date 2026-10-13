@@ -23,8 +23,11 @@
  * Raw deflate rather than Tamp (which the level and save files use): on
  * this data deflate is 15-25% smaller - it adds Huffman coding on top of
  * LZ77, which Tamp lacks - and the decoder is just as small.  The window is
- * 4 KB, so the encoder is run with a 4 KB window (build.py) and every
- * back-reference stays in range.
+ * chosen per entry by build.py and recorded in the directory: a big text file
+ * read once mid-game uses a wide one, while a level template - read while a
+ * new level is being built, when free memory is tightest - stays small.  The
+ * encoder is run with the same window, so every back-reference stays in
+ * range.
  *
  * Each open handle owns its own FILE* and inflate state, so two data files
  * can be open at once without sharing a read position.  Seeking is emulated
@@ -42,8 +45,12 @@
 #define NHDATA_FILE "nhdata"
 #define NH_NAME_MAX 16
 #define NH_INBUF 1024
-#define NH_WINDOW_BITS 12
-#define NH_WINDOW (1U << NH_WINDOW_BITS)
+/* The deflate window is chosen per entry by build.py and recorded in the
+ * directory, so a big text file read once mid-game can use a wide window
+ * while a level template - read while a new level is being built - stays
+ * small.  Each open handle allocates 1<<wbits bytes for its dictionary. */
+#define NH_WINDOW_MIN 10
+#define NH_WINDOW_MAX 15
 
 struct nh_header {
     char magic[4];
@@ -53,14 +60,16 @@ struct nh_header {
 
 struct nh_dir_ent {
     char name[NH_NAME_MAX];
-    unsigned int off;  /* absolute offset of this entry's deflate stream */
-    unsigned int clen; /* compressed length */
-    unsigned int ulen; /* uncompressed length */
+    unsigned int off;   /* absolute offset of this entry's deflate stream */
+    unsigned int clen;  /* compressed length */
+    unsigned int ulen;  /* uncompressed length */
+    unsigned int wbits; /* the reader allocates a 1<<wbits dictionary */
 };
 
 struct nh_stream {
     uzlib_uncomp_t dec;
     unsigned char *window; /* inflate dictionary (back-reference ring) */
+    unsigned int window_bits;
     FILE *fp;
     unsigned long ulen;    /* uncompressed length */
     unsigned long upos;    /* uncompressed read position */
@@ -168,6 +177,8 @@ nh_open(FILE *fp, const struct nh_dir_ent *ent)
 {
     struct nh_stream *st;
 
+    if (ent->wbits < NH_WINDOW_MIN || ent->wbits > NH_WINDOW_MAX)
+        return (struct nh_stream *) 0; /* corrupt directory */
     st = (struct nh_stream *) alloc(sizeof *st);
     memset(st, 0, sizeof *st);
     st->fp = fp;
@@ -175,8 +186,9 @@ nh_open(FILE *fp, const struct nh_dir_ent *ent)
     st->coff = ent->off;
     st->cend = (unsigned long) ent->off + ent->clen;
     st->cpos = ent->off;
-    st->window = (unsigned char *) alloc(NH_WINDOW);
-    uzlib_uncompress_init(&st->dec, st->window, NH_WINDOW);
+    st->window_bits = ent->wbits;
+    st->window = (unsigned char *) alloc(1U << ent->wbits);
+    uzlib_uncompress_init(&st->dec, st->window, 1U << ent->wbits);
     st->dec.source_read_data = st;
     st->dec.source_read_cb = nh_source_read;
     st->dec.source = st->dec.source_limit = st->inbuf; /* force a refill */
@@ -191,7 +203,7 @@ nh_rewind(struct nh_stream *st, FILE *fp)
         return FALSE;
     st->cpos = st->coff;
     st->upos = 0;
-    uzlib_uncompress_init(&st->dec, st->window, NH_WINDOW);
+    uzlib_uncompress_init(&st->dec, st->window, 1U << st->window_bits);
     st->dec.source_read_data = st;
     st->dec.source_read_cb = nh_source_read;
     st->dec.source = st->dec.source_limit = st->inbuf;
@@ -234,6 +246,10 @@ dlb_fopen(const char *name, const char *mode)
         return (dlb *) 0;
     }
     st = nh_open(fp, ent);
+    if (!st) {
+        (void) fclose(fp);
+        return (dlb *) 0;
+    }
     dp = (dlb *) alloc(sizeof *dp);
     dp->fp = fp;
     dp->lib = (library *) st;

@@ -31,6 +31,10 @@
  * port/nhdlb.c. */
 FILE *nhdlb_memopen(const char *name);
 
+/* Heap and stack high-water measurement; implemented in port/memlog.c. */
+void nh_mem_transition(int dlevel, long turn);
+void nh_mem_report(void);
+
 /* NetHack's files.c sizes a path buffer with PATH_MAX.  Suppressing
  * system.h drops whatever header used to bring it in; newlib's <limits.h>
  * does not define it either. */

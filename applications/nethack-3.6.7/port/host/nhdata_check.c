@@ -23,7 +23,8 @@
 #include "uzlib.h"
 
 #define NH_NAME_MAX 16
-#define NH_WINDOW_BITS 12
+#define NH_WINDOW_MIN 10
+#define NH_WINDOW_MAX 15
 
 struct nh_header {
     char magic[4];
@@ -36,6 +37,7 @@ struct nh_dir_ent {
     unsigned int off;
     unsigned int clen;
     unsigned int ulen;
+    unsigned int wbits;
 };
 
 static unsigned char *
@@ -94,7 +96,7 @@ main(int argc, char **argv)
         return 2;
     }
 
-    dict = malloc(1U << NH_WINDOW_BITS);
+    dict = malloc(1U << NH_WINDOW_MAX);
     if (!dict)
         return 2;
 
@@ -106,6 +108,12 @@ main(int argc, char **argv)
 
         memcpy(&ent, archive + sizeof hdr + i * sizeof ent, sizeof ent);
         ent.name[NH_NAME_MAX - 1] = '\0';
+        if (ent.wbits < NH_WINDOW_MIN || ent.wbits > NH_WINDOW_MAX) {
+            fprintf(stderr, "nhdata_check: %s: bad window %u\n", ent.name,
+                    ent.wbits);
+            failures++;
+            continue;
+        }
         if ((size_t) ent.off + ent.clen > alen) {
             fprintf(stderr, "nhdata_check: %s: stream past end of archive\n",
                     ent.name);
@@ -113,7 +121,7 @@ main(int argc, char **argv)
             continue;
         }
         out = malloc(ent.ulen ? ent.ulen : 1);
-        uzlib_uncompress_init(&d, dict, 1U << NH_WINDOW_BITS);
+        uzlib_uncompress_init(&d, dict, 1U << ent.wbits);
         d.source = archive + ent.off;
         d.source_limit = archive + ent.off + ent.clen;
         d.dest = out;

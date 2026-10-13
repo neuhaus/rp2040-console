@@ -31,46 +31,58 @@ DATA_LIBRARY = (
 )
 
 
-# The data library's raw-deflate window.  Each entry is compressed with a
-# 4 KB window (build.py) and the on-board inflater uses a 4 KB dictionary
-# (port/nhdlb.c), so every back-reference is in range.  Keep the two in step.
-NH_WINDOW_BITS = 12
+# The data library's raw-deflate windows, in bits.  build.py probes these per
+# entry and records the winner in the directory; the board's inflater allocates
+# a 1<<wbits dictionary (port/nhdlb.c).  Keep the two in step.
+NH_WINDOW_MIN = 10
+NH_WINDOW_MAX = 15
 NH_NAME_MAX = 16
+
+
+def deflate(data, wbits):
+    co = zlib.compressobj(9, zlib.DEFLATED, -wbits)
+    return co.compress(data) + co.flush()
 
 
 def pack_nhdata(dat, library):
     """Write dat/nhdata: raw-deflate streams for `library`, in one archive.
 
-    The format matches port/nhdlb.c: a 12-byte header, a 28-byte directory
-    entry per file, then the concatenated deflate streams.
+    The format matches port/nhdlb.c: a 12-byte header, a 32-byte directory
+    entry per file, then the concatenated deflate streams.  Each entry takes
+    the window that packs it smallest, so a big text file read once mid-game
+    can use a wide one while a level template - decoded while a new level is
+    being built, when free memory is tightest - stays small.
     """
     blob = bytearray()
     directory = bytearray()
-    data_start = 12 + 28 * len(library)
+    data_start = 12 + 32 * len(library)
     raw = {}
     for name in library:
         path = dat / name
         if not path.exists():
             raise SystemExit('missing data file: %s' % path)
-        raw[name] = path.read_bytes()
-        co = zlib.compressobj(9, zlib.DEFLATED, -NH_WINDOW_BITS)
-        comp = co.compress(raw[name]) + co.flush()
+        data = path.read_bytes()
+        raw[name] = data
+        # Smallest output wins; ties go to the smaller window (less RAM).
+        comp, wbits = min(((deflate(data, w), w)
+                           for w in range(NH_WINDOW_MIN, NH_WINDOW_MAX + 1)),
+                          key=lambda cw: (len(cw[0]), cw[1]))
         nm = name.encode()[: NH_NAME_MAX - 1]
         directory += nm + b'\0' * (NH_NAME_MAX - len(nm))
-        directory += struct.pack('<III', data_start + len(blob), len(comp),
-                                 len(raw[name]))
+        directory += struct.pack('<IIII', data_start + len(blob), len(comp),
+                                 len(data), wbits)
         blob += comp
     archive = (b'NHDA' + struct.pack('<II', 1, len(library))
                + bytes(directory) + bytes(blob))
     (dat / 'nhdata').write_bytes(archive)
 
-    # Round-trip every entry; the on-board decoder reads exactly this format.
+    # Round-trip every entry with its own window; the board reads this format.
     for i, name in enumerate(library):
-        off, clen, _ulen = struct.unpack_from(
-            '<III', archive, 12 + 28 * i + NH_NAME_MAX)
-        dec = zlib.decompressobj(-NH_WINDOW_BITS)
+        off, clen, ulen, wbits = struct.unpack_from(
+            '<IIII', archive, 12 + 32 * i + NH_NAME_MAX)
+        dec = zlib.decompressobj(-wbits)
         got = dec.decompress(archive[off:off + clen]) + dec.flush()
-        if got != raw[name]:
+        if len(got) != ulen or got != raw[name]:
             raise SystemExit('nhdata round-trip failed for %s' % name)
 
 
@@ -128,7 +140,8 @@ def main():
     # shutil.copy (not copy2) so a rebuilt tree notices the change: copy2
     # preserves mtimes and ninja would not.
     port = HERE / 'port'
-    for name in ('compat.h', 'platform.c', 'layout.c', 'CMakeLists.txt'):
+    for name in ('compat.h', 'platform.c', 'layout.c', 'memlog.c',
+                 'CMakeLists.txt'):
         shutil.copy(port / name, src / name)
     shutil.copy(port / 'nhdlb.c', src / 'src' / 'dlb.c')
     for lib in ('tamp', 'uzlib'):

@@ -72,13 +72,13 @@ rp2040_console_game(NAME nethack ${_restart_option}
         EMPTY_FILES record perm logfile xlogfile
         DATA_DIRS save
         LISTDIR save
-        FS_OFFSET 0x17D000 FS_SIZE 0x83000
+        FS_OFFSET 0x17E000 FS_SIZE 0x82000
         HEAP_END 0x2003c000 STACK_RESERVE 24576)
 target_compile_options(nethack PRIVATE -Oz -fsigned-char
         -fno-unwind-tables -fno-asynchronous-unwind-tables)
 target_link_options(nethack PRIVATE --specs=nano.specs)
 set_property(SOURCE ${SRCS} APPEND PROPERTY COMPILE_OPTIONS -include ${CMAKE_CURRENT_SOURCE_DIR}/compat.h)
-target_sources(nethack PRIVATE platform.c)
+target_sources(nethack PRIVATE platform.c memlog.c)
 
 # The Tamp decompressor, too small to notice in the flash budget and small
 # enough in RAM to stream one data file at a time.  It is deliberately not
