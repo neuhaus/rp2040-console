@@ -40,6 +40,11 @@ static char s_nd[] = "\033[C";
 static char s_up[] = "\033[A";
 static char s_so[] = "\033[7m";
 static char s_se[] = "\033[m";
+/* ANSI setaf/setab (colour).  NetHack's termcap path actually derives its
+ * colour sequences from so/se, but the capabilities are here for anything
+ * that probes for them. */
+static char s_AF[] = "\033[3%dm";
+static char s_AB[] = "\033[4%dm";
 /* Select DEC drawing in G0 and restore ASCII using only ESC sequences.
  * Avoid SI (Ctrl-O): screen serial ports can process it as VDISCARD when
  * IEXTEN is enabled, consuming it and producing unsolicited input. */
@@ -146,6 +151,10 @@ char *tgetstr(const char *id, char **area)
         return s_so;
     if (strcmp(id, "se") == 0)
         return s_se;
+    if (strcmp(id, "AF") == 0)
+        return s_AF;
+    if (strcmp(id, "AB") == 0)
+        return s_AB;
     if (strcmp(id, "as") == 0)
         return s_as;
     if (strcmp(id, "ae") == 0)
