@@ -1,0 +1,70 @@
+--- a/include/config.h
++++ b/include/config.h
+@@ -261,8 +261,9 @@
+ 
+ #ifdef UNIX
+ /* path and file name extension for compression program */
+-# define COMPRESS "/usr/ucb/compress"	     /* Lempel-Ziv compression */
+-# define COMPRESS_EXTENSION ".Z"	     /* compress's extension */
++# undef COMPRESS /* no subprocesses */
++/* # define COMPRESS "/usr/ucb/compress" */	     /* Lempel-Ziv compression */
++/* # define COMPRESS_EXTENSION ".Z" */	     /* compress's extension */
+ 
+ /* An example of one alternative you might want to use: */
+ /* # define COMPRESS "/usr/local/bin/gzip"   /* FSF gzip compression */
+@@ -288,7 +289,7 @@
+  * If you define HACKDIR, then this will be the default playground;
+  * otherwise it will be the current directory.
+  */
+-#define HACKDIR "/usr/games/lib/nethackdir" 	/* nethack directory */
++#define HACKDIR "/" 	/* nethack directory */
+ 
+ /*
+  * Some system administrators are stupid enough to make Hack suid root
+--- a/include/unixconf.h
++++ b/include/unixconf.h
+@@ -31,9 +31,9 @@
+ 
+ /* define any of the following that are appropriate */
+ /* #define SVR4		/* use in addition to SYSV for System V Release 4 */
+-#define NETWORK	/* if running on a networked system */
++/* #define NETWORK */	/* if running on a networked system */
+ 			/* e.g. Suns sharing a playground through NFS */
+-#define SUNOS4	/* SunOS 4.x */
++/* #define SUNOS4 */	/* SunOS 4.x */
+ /* #define LINUX  /* Another Unix clone running on Intel processors */
+ /* #define GENIX	/* Yet Another Unix Clone */
+ /* #define HISX		/* Bull Unix for XPS Machines */
+@@ -45,7 +45,7 @@
+ 			/* or ANSI color support on termcap systems */
+ 			/* or X11 color	*/
+ /* #define POSIX_JOB_CONTROL	/* use System V POSIX job control */
+-/* #define POSIX_TYPES	/* use POSIX types for system calls and termios */
++ #define POSIX_TYPES /*	/* use POSIX types for system calls and termios */
+                         /* define for platforms using the GNU libraries */
+                         /* linux, etc .. */
+ 
+@@ -80,2 +80,2 @@
+-/* #define NO_FILE_LINKS	/* if no hard links */
+-/* #define LOCKDIR "/usr/games/lib/nethackdir"	/* where to put locks */
++#define NO_FILE_LINKS /* FAT has no hard links */
++#define LOCKDIR "/" /* lock files live in the mounted volume */
+@@ -107,7 +107,7 @@
+  * A stat system call is done on the mailbox every MAILCKFREQ moves.
+  */
+ 
+-#define MAIL			/* Deliver mail during the game */
++/* #define MAIL */			/* Deliver mail during the game */
+ 
+ /* The Andrew Message System does mail a little differently from normal
+  * UNIX.  Mail is deposited in the user's own directory in ~/Mailbox
+@@ -219,6 +219,9 @@
+ 
+ #define SHELL		/* do not delete the '!' command */
+ 
++#undef SUSPEND
++#undef BSD_JOB_CONTROL
++#undef SHELL
+ #include "system.h"
+ 
+ #if defined(BSD) || defined(ULTRIX)
