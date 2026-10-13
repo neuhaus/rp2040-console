@@ -137,7 +137,8 @@ FAT. The image check rejects a compiled lock implementation that calls `link()`.
 `NETWORK`, `TERMINFO` and `POSIX_JOB_CONTROL` are off, `COMPRESS`/`INSURANCE`
 are off, `HACKDIR` is `/`, and `SYSCF` is off, so the game needs no `sysconf`
 file. `sys_random_seed()` uses the platform's `getentropy()` instead of
-`/dev/urandom`.
+`/dev/urandom`. No `USER` or `LOGNAME` is set in the environment, so the game
+asks for a character name rather than defaulting to one.
 
 ### Host and target must preprocess alike
 

@@ -19,7 +19,10 @@ endif()
 set(NETHACK_OPTIONS "" CACHE STRING
         "NETHACKOPTIONS baked into the image; empty for upstream defaults")
 
-set(_game_env TERM=xterm HOME=/ USER=player)
+# NetHack's whoami() seeds the character name from $USER or $LOGNAME and then
+# skips the "Who are you?" prompt, so neither is set here: the player names
+# their own character.  HOME stays for NetHack's config-file lookup.
+set(_game_env TERM=xterm HOME=/)
 if(NETHACK_OPTIONS)
     list(APPEND _game_env "NETHACKOPTIONS=${NETHACK_OPTIONS}")
 endif()
