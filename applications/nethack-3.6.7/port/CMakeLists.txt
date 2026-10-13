@@ -55,7 +55,7 @@ rp2040_console_game(NAME nethack ${_restart_option}
         LEGACY_C LEGACY_TIME32
         ENV ${_game_env}
         DATA_FILES symbols nhdata
-        EMPTY_FILES record perm logfile
+        EMPTY_FILES record perm logfile xlogfile
         DATA_DIRS save
         FS_OFFSET 0x184000 FS_SIZE 0x7C000
         HEAP_END 0x2003c000 STACK_RESERVE 24576)

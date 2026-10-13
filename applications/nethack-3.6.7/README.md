@@ -119,9 +119,11 @@ Default outputs are under `build/nethack-3.6.7/hardware/`:
 - `nethack.elf`, `nethack.bin` and `nethack-volume.img`: inspection artifacts.
 
 The volume holds `nhdata` (the compressed library), `symbols` (the one data file
-NetHack opens through plain stdio rather than the librarian), empty score/lock
-files and a `save` directory. About 380 KB of the 496 KB is used, leaving the
-rest for save files; how much a full game needs is unmeasured.
+NetHack opens through plain stdio rather than the librarian), empty `record`,
+`perm`, `logfile` and `xlogfile` (NetHack locks and appends to all four, and
+`lock_file()` opens the file itself), and a `save` directory. About 380 KB of
+the 496 KB is used, leaving the rest for save files; how much a full game needs
+is unmeasured.
 
 The build generates all game data, checks host/ARM sizes and offsets, validates
 firmware/heap/stack bounds, checks FAT with fsck and verifies UF2 addresses and
