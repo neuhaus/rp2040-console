@@ -16,5 +16,6 @@
 
 /* Fill the table from the entries the game declared. Call before main(). */
 void env_init(void);
+void env_reset(void);
 
 #endif /* RP2040_CONSOLE_ENV_H */

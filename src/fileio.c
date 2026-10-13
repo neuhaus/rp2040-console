@@ -81,6 +81,8 @@ static struct {
     bool     have_path;
 } open_files[MAX_OPEN_FILES];
 
+static bool preserved_files[MAX_OPEN_FILES];
+
 /*
  * Time conversion is approximate: a packed FAT stamp is a local time with no
  * timezone, so fold it to a monotonic-ish value rather than a real date. The
@@ -317,12 +319,15 @@ static time_t session_mtime(void)
 
 int close(int fd)
 {
+    /* Console descriptors are virtual: never shut down USB on fclose(). */
+    if (fd >= 0 && fd < FIRST_FILE_FD) return 0;
     if (fd < 0 || fd >= MAX_OPEN_FILES || !open_files[fd].used) {
         errno = EBADF;
         return -1;
     }
 
-    f_close(&open_files[fd].fil);
+    FRESULT result = f_close(&open_files[fd].fil);
+    if (result != FR_OK) { errno = EIO; return -1; }
 
     /*
      * Remember when this was written; the directory entry cannot (it has no
@@ -337,6 +342,20 @@ int close(int fd)
 }
 
 int _close(int fd) { return close(fd); }
+
+void console_files_begin_session(void)
+{
+    for (int fd = FIRST_FILE_FD; fd < MAX_OPEN_FILES; ++fd)
+        preserved_files[fd] = open_files[fd].used;
+}
+
+int console_files_close_session(void)
+{
+    int result = 0;
+    for (int fd = FIRST_FILE_FD; fd < MAX_OPEN_FILES; ++fd)
+        if (open_files[fd].used && !preserved_files[fd] && close(fd) != 0) result = -1;
+    return result;
+}
 
 /*
  * newlib reaches the filesystem through the _-prefixed syscalls, not

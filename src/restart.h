@@ -9,5 +9,6 @@
  * See restart.c.
  */
 void restart_note_boot(void);
+void restart_wait_soft(int status);
 
 #endif /* RP2040_CONSOLE_RESTART_H */

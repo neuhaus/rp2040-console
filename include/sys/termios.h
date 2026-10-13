@@ -112,17 +112,17 @@ typedef unsigned int speed_t;
 #define VT1     0x2000u
 
 /* c_cflag */
-#define CSIZE   0x0030u
+#define CSIZE   0x0060u
 #define CS5     0x0000u
-#define CS6     0x0010u
-#define CS7     0x0020u
-#define CS8     0x0030u
-#define CSTOPB  0x0040u
-#define CREAD   0x0080u
-#define PARENB  0x0100u
-#define PARODD  0x0200u
-#define HUPCL   0x0400u
-#define CLOCAL  0x0800u
+#define CS6     0x0020u
+#define CS7     0x0040u
+#define CS8     0x0060u
+#define CSTOPB  0x0080u
+#define CREAD   0x0100u
+#define PARENB  0x0200u
+#define PARODD  0x0400u
+#define HUPCL   0x0800u
+#define CLOCAL  0x1000u
 #define CBAUD   0x001fu
 #define B0      0x0000u
 #define B50     0x0001u
@@ -142,6 +142,10 @@ typedef unsigned int speed_t;
 #define B38400  0x000fu
 #define B57600  0x0010u
 #define B115200 0x0011u
+
+#ifndef _POSIX_VDISABLE
+#define _POSIX_VDISABLE 0
+#endif
 
 /* c_lflag */
 #define ISIG    0x0001u
@@ -190,5 +194,10 @@ int tcsendbreak(int fd, int duration);
 int tcdrain(int fd);
 int tcflush(int fd, int queue);
 int tcflow(int fd, int action);
+speed_t cfgetispeed(const struct termios *t);
+speed_t cfgetospeed(const struct termios *t);
+int cfsetispeed(struct termios *t, speed_t speed);
+int cfsetospeed(struct termios *t, speed_t speed);
+int cfsetspeed(struct termios *t, speed_t speed);
 
 #endif /* RP2040_CONSOLE_SYS_TERMIOS_H */
