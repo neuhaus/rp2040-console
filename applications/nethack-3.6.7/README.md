@@ -174,9 +174,9 @@ The build generates all game data, checks host/ARM sizes and offsets, validates
 firmware/heap/stack bounds, checks FAT with fsck and verifies UF2 addresses and
 family IDs. `HEAP_END=0x2003c000` leaves 24 KB above the heap for stack/SDK
 scratch; actual stack peaks are unmeasured. NetHack's own static data is large
-(about 149 KB), so the heap budget (about 91 KB) is smaller than on 3.1.3; peak
-heap use is unmeasured. The two biggest read-only tables, `mons[]` (~21 KB) and
-`extcmdlist[]` (~3 KB), are declared `const` by the patch so the toolchain
+(about 148 KB), so the heap budget (about 92 KB) is smaller than on 3.1.3;
+peak heap use is unmeasured. The two biggest read-only tables, `mons[]` (~21 KB)
+and `extcmdlist[]` (~3 KB), are declared `const` by the patch so the toolchain
 places them in flash (XIP) rather than SRAM; only tables the game actually
 writes (`objects[]`, `artilist[]`, options) stay in RAM. The manifest uses
 `LEGACY_C`, `LEGACY_TIME32` and `RENAMES panic=nh_panic`.
@@ -215,7 +215,9 @@ python3 applications/nethack-3.6.7/build.py --source ./nethack --soft-reboot
 ```
 
 Outputs then go to `build/nethack-3.6.7/soft/` with the same filenames and flash
-layout. Hardware reboot is the default. Read the
+layout. Hardware reboot is the default and is what the recipe ships: soft reboot
+adds about 1 KB of static RAM and, heavier over a long game, a bookkeeping
+allocation for every `malloc` plus a fixed exit-handler table. Read the
 [supported single-threaded C profile](../../INTERNALS.md#optional-soft-reboot)
 before enabling soft reboot.
 
