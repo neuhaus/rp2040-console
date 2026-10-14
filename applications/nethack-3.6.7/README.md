@@ -1,5 +1,8 @@
 # NetHack 3.6.7 on a 2 MB Pico
 
+> [!WARNING]
+> While it runs already, you will run out of flash memory during an ascension run! :boom: Work in progress.
+
 Source: [NetHack/NetHack](https://github.com/NetHack/NetHack), tag
 `NetHack-3.6.7_Released`, commit
 `ed600d9f0f3c37677418f0150f59363ca641f3dc`. The recipe applies configuration
