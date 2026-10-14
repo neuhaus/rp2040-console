@@ -1,5 +1,8 @@
 # NetHack 3.6.7 on a 2 MB Pico
 
+> [!WARNING]
+> While it runs already, you will run out of flash memory during an ascension run! :boom: Work in progress.
+
 Source: [NetHack/NetHack](https://github.com/NetHack/NetHack), tag
 `NetHack-3.6.7_Released`, commit
 `ed600d9f0f3c37677418f0150f59363ca641f3dc`. The recipe applies configuration
@@ -175,6 +178,15 @@ file it never wrote is shown without a date. Nothing clears the screen here, so
 the lines stay in the terminal's scrollback once the game draws over them.
 
 ## Outputs and checks
+
+Run the save codec regression from the console repository root with a local
+NetHack checkout and a native C compiler:
+
+```sh
+python3 tests/nethack_codec.py --source /path/to/NetHack --sanitize
+```
+
+Omit `--sanitize` if the compiler does not support sanitizers.
 
 Default outputs are under `build/nethack-3.6.7/hardware/`:
 
