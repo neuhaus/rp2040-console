@@ -104,6 +104,23 @@ static void panic(const char *fmt, ...) {
 }
 #define error panic
 #define nhclose close
+/* The port composes upstream's zero-run codec in front of Tamp, so an
+ * independent decode of the Tamp stream is the zero-run stream, not raw;
+ * decode that layer here (independently of the extracted adapter). */
+static long rle_decode(const unsigned char *in, unsigned n, unsigned char *out,
+                       unsigned cap) {
+    unsigned i = 0, o = 0; short inrun = -1;
+    while (i < n) {
+        unsigned char ch;
+        if (inrun > 0) { inrun--; if (o >= cap) return -1; out[o++] = 0; continue; }
+        ch = in[i++];
+        if (o >= cap) return -1;
+        out[o++] = ch;
+        if (ch == 0) { if (i >= n) return -1; inrun = (short) in[i++]; }
+    }
+    while (inrun > 0) { inrun--; if (o >= cap) return -1; out[o++] = 0; }
+    return (long) o;
+}
 '''
 
 MAIN = r'''
@@ -119,7 +136,7 @@ int main(void) {
     for (ri = 0; ri < sizeof requests / sizeof requests[0]; ++ri) {
         unsigned n = lengths[li], step = requests[ri], pos, k;
         unsigned char *raw = malloc(n), *got = malloc(n);
-        unsigned char *compressed, *reference;
+        unsigned char *compressed, *reference, *decoded;
         uint32_t rng = 42;
         char path[] = "/tmp/nethack-codec-XXXXXX";
         int fd = mkstemp(path), wfd = dup(fd), reference_ok;
@@ -147,14 +164,16 @@ int main(void) {
         zerocomp_bclose(wfd);
         clen = lseek(fd, 0, SEEK_END) - 15;
         if (clen <= 0 || clen > 24000) exit(2);
-        compressed = malloc(clen); reference = malloc(n);
-        if (!compressed || !reference || !raw || !got) exit(2);
+        compressed = malloc(clen);
+        reference = malloc(2 * n + 8); decoded = malloc(n);
+        if (!compressed || !reference || !decoded || !raw || !got) exit(2);
         lseek(fd, 15, SEEK_SET);
         if (read(fd, compressed, clen) != clen) exit(2);
         tamp_decompressor_init(&dec, NULL, window, 10);
-        result = tamp_decompressor_decompress(&dec, reference, n, &written,
+        result = tamp_decompressor_decompress(&dec, reference, 2 * n + 8, &written,
                                              compressed, clen, &consumed);
-        reference_ok = written == n && !memcmp(raw, reference, n);
+        reference_ok = rle_decode(reference, written, decoded, n) == (long) n
+                       && !memcmp(raw, decoded, n);
         if (!reference_ok) {
             printf("REFERENCE FAIL n=%u pattern=%u flushes=%u output=%zu res=%d\n",
                    n, pattern, flushes, written, result); exit(2);
@@ -201,6 +220,7 @@ int main(void) {
             printf("TRUNCATION FAIL raw=%u compressed=%ld\n", n, clen); ++failures;
         }
         close(fd); free(raw); free(got); free(compressed); free(reference);
+        free(decoded);
     }
     printf("%u cases; %u adapter failures; all direct decoder checks passed\n",
            cases, failures);

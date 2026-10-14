@@ -463,7 +463,7 @@
  register int fd, mode;
 --- pristine/src/restore.c
 +++ edited/src/restore.c
-@@ -1549,70 +1549,143 @@
+@@ -1549,70 +1549,137 @@
  }
  
  #ifdef ZEROCOMP
@@ -523,26 +523,9 @@
 +    tamp_res res;
 +
 +    while (nhtamp_dstage_pos >= nhtamp_dstage_len) {
-+        if (nhtamp_cin_pos >= nhtamp_cin_len) {
-+            int r = read(fd, (genericptr_t) nhtamp_cin,
-+                         (unsigned) sizeof nhtamp_cin);
-+
-+            if (r <= 0)
-+                return -1;
-+            nhtamp_cin_len = (unsigned int) r;
-+            nhtamp_cin_pos = 0;
-         }
--        inbufp = 0;
--    }
--    return inbuf[inbufp++];
--}
- 
--STATIC_OVL void
--zerocomp_minit()
--{
--    inbufsz = 0;
--    inbufp = 0;
--    inrunlength = -1;
++        /* Give the decoder a chance to emit from buffered bits or a pending
++         * match before refilling compressed input: reaching physical EOF does
++         * not mean the decoded output is exhausted. */
 +        written = 0;
 +        consumed = 0;
 +        res = tamp_decompressor_decompress(&nhtamp_decomp, nhtamp_dstage,
@@ -561,12 +544,13 @@
 +            nhtamp_dstage_len = (unsigned int) written;
 +            nhtamp_dstage_pos = 0;
 +        } else if (consumed == 0) {
-+            /* The decoder wants more contiguous input than remains: compact
-+             * the unconsumed tail, then read more after it. */
++            /* Nothing decoded and nothing consumed: compact any unconsumed
++             * tail, then refill.  Hitting EOF here means the stream is drained
++             * as well as exhausted. */
 +            if (nhtamp_cin_pos > 0) {
 +                unsigned int keep = nhtamp_cin_len - nhtamp_cin_pos;
 +
-+                memcpy(nhtamp_cin, nhtamp_cin + nhtamp_cin_pos, keep);
++                memmove(nhtamp_cin, nhtamp_cin + nhtamp_cin_pos, keep);
 +                nhtamp_cin_len = keep;
 +                nhtamp_cin_pos = 0;
 +            }
@@ -580,8 +564,18 @@
 +                    return -1;
 +                nhtamp_cin_len += (unsigned int) r;
 +            }
-+        }
-+    }
+         }
+-        inbufp = 0;
+     }
+-    return inbuf[inbufp++];
+-}
+-
+-STATIC_OVL void
+-zerocomp_minit()
+-{
+-    inbufsz = 0;
+-    inbufp = 0;
+-    inrunlength = -1;
 +    return nhtamp_dstage[nhtamp_dstage_pos++];
  }
  
@@ -632,13 +626,13 @@
 +            nhtamp_inrun--;
 +            out[produced++] = '\0';
 +            continue;
-+        }
+         }
+-        /*readlen++;*/
 +        ch = nhtamp_dgetc(fd);
 +        if (ch < 0) {
 +            restoreprocs.mread_flags = -1;
 +            return;
-         }
--        /*readlen++;*/
++        }
 +        out[produced++] = (char) ch;
 +        if (ch == (int) RLESC) /* run of zeros: read its count */
 +            nhtamp_inrun = (short) nhtamp_dgetc(fd);
