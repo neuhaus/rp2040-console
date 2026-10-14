@@ -171,6 +171,40 @@ the lines stay in the terminal's scrollback once the game draws over them.
 
 ## Outputs and checks
 
+### Save codec regression
+
+The Tamp restore adapter drains buffered decoder output before reading more
+compressed input, so physical EOF does not discard a pending match or literal.
+The compressor and save format are unchanged; existing saves remain compatible.
+
+Run the focused native regression against a local upstream checkout:
+
+```sh
+python3 tests/nethack_codec.py --source /path/to/NetHack --sanitize
+```
+
+It extracts the actual patched adapters and checks 2,240 combinations of data,
+read sizes, short input reads, flushes, raw front matter, EOF, and truncated
+streams. `--sanitize` requires compiler support for address and undefined-behavior
+sanitizers. This test needs no 32-bit host compiler or firmware toolchain.
+`--patch /path/to/config.patch` can check an earlier patch revision.
+
+For a standalone USB regression on the Pico, generate a test project:
+
+```sh
+python3 tests/nethack_codec.py --source /path/to/NetHack \
+    --pico-source /tmp/nethack-codec-pico
+cmake -S /tmp/nethack-codec-pico -B /tmp/nethack-codec-build -G Ninja \
+    -DPICO_BOARD=pico
+cmake --build /tmp/nethack-codec-build
+picotool load -v -x /tmp/nethack-codec-build/nethack_codec_probe.elf
+```
+
+This diagnostic runs entirely in SRAM and uses in-memory file fixtures. Loading
+its ELF with picotool does not replace firmware or write the game data volume.
+Open its USB serial port to start the tests. It waits there after reporting
+`RP2040 regression PASS` or `FAIL`; reboot to return to the installed firmware.
+
 Default outputs are under `build/nethack-3.6.7/hardware/`:
 
 - `nethack.uf2`: XIP firmware below flash offset `0x17D000` (about 1.49 MB).

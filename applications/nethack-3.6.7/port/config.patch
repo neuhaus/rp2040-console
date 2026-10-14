@@ -407,7 +407,7 @@
  register int fd, mode;
 --- pristine/src/restore.c
 +++ edited/src/restore.c
-@@ -1549,70 +1549,104 @@
+@@ -1549,70 +1549,95 @@
  }
  
  #ifdef ZEROCOMP
@@ -479,6 +479,8 @@
 -        } else {
 -            register short ch = zerocomp_mgetc();
 -            if (ch < 0) {
+-                restoreprocs.mread_flags = -1;
+-                return;
 +
 +    if (!nhtamp_dstarted) {
 +        if (tamp_decompressor_init(&nhtamp_decomp, (TampConf *) 0, nhtamp_dwin,
@@ -493,20 +495,9 @@
 +        size_t written = 0, consumed = 0;
 +        tamp_res res;
 +
-+        if (nhtamp_cin_pos >= nhtamp_cin_len) {
-+            int r = read(fd, (genericptr_t) nhtamp_cin,
-+                         (unsigned) sizeof nhtamp_cin);
-+
-+            if (r <= 0) {
-                 restoreprocs.mread_flags = -1;
-                 return;
-             }
--            if ((*(*(char **) &buf)++ = (char) ch) == RLESC) {
--                inrunlength = zerocomp_mgetc();
-+            nhtamp_cin_len = (unsigned int) r;
-+            nhtamp_cin_pos = 0;
-+        }
-+
++        /* Tamp can still produce bytes from buffered bits or a pending
++         * match after consuming all input. Drain that state before reading
++         * more: physical EOF does not mean decoded output is exhausted. */
 +        res = tamp_decompressor_decompress(&nhtamp_decomp, out + produced,
 +                                           (size_t) (len - produced), &written,
 +                                           nhtamp_cin + nhtamp_cin_pos,
@@ -526,10 +517,12 @@
 +            if (nhtamp_cin_pos > 0) {
 +                unsigned int keep = nhtamp_cin_len - nhtamp_cin_pos;
 +
-+                memcpy(nhtamp_cin, nhtamp_cin + nhtamp_cin_pos, keep);
++                memmove(nhtamp_cin, nhtamp_cin + nhtamp_cin_pos, keep);
 +                nhtamp_cin_len = keep;
 +                nhtamp_cin_pos = 0;
-+            }
+             }
+-            if ((*(*(char **) &buf)++ = (char) ch) == RLESC) {
+-                inrunlength = zerocomp_mgetc();
 +            if (nhtamp_cin_len == sizeof nhtamp_cin)
 +                panic("tamp: input buffer too small");
 +            {
