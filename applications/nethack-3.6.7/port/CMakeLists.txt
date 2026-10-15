@@ -6,6 +6,19 @@ include(${RP2040_CONSOLE_DIR}/pico_sdk_import.cmake)
 project(nethack367 C CXX ASM)
 set(CMAKE_C_STANDARD 11)
 option(NETHACK_SOFT_REBOOT "Restart the game while preserving the USB console" OFF)
+option(NETHACK_LTO "Optimize NetHack across translation units" ON)
+set(NETHACK_LTO_JOBS 4 CACHE STRING "Maximum LTO link workers")
+# Soft reset tags ordinary data/bss object sections before linking. LTO
+# defers those sections until the final link and cannot use that tagging path.
+if(NETHACK_SOFT_REBOOT)
+    set(NETHACK_LTO OFF)
+endif()
+set(_fs_offset 0x17E000)
+set(_fs_size 0x82000)
+if(NETHACK_LTO)
+    set(_fs_offset 0x17A000)
+    set(_fs_size 0x86000)
+endif()
 set(_restart_option)
 if(NETHACK_SOFT_REBOOT)
     set(_restart_option SOFT_REBOOT)
@@ -72,13 +85,13 @@ rp2040_console_game(NAME nethack ${_restart_option}
         EMPTY_FILES record perm logfile xlogfile
         DATA_DIRS save
         LISTDIR save
-        FS_OFFSET 0x17E000 FS_SIZE 0x82000
+        FS_OFFSET ${_fs_offset} FS_SIZE ${_fs_size} FS_ROOT_ENTRIES 256
         HEAP_END 0x2003d000 STACK_RESERVE 20480)
 target_compile_options(nethack PRIVATE -Oz -fsigned-char
         -fno-unwind-tables -fno-asynchronous-unwind-tables)
 target_link_options(nethack PRIVATE --specs=nano.specs)
 set_property(SOURCE ${SRCS} APPEND PROPERTY COMPILE_OPTIONS -include ${CMAKE_CURRENT_SOURCE_DIR}/compat.h)
-target_sources(nethack PRIVATE platform.c memlog.c)
+target_sources(nethack PRIVATE memlog.c)
 
 # The Tamp decompressor, too small to notice in the flash budget and small
 # enough in RAM to stream one data file at a time.  It is deliberately not
@@ -106,4 +119,14 @@ if(NOT NETHACK_SOFT_REBOOT)
     foreach(allocator _malloc_r _calloc_r _realloc_r _free_r)
         target_link_options(nethack PRIVATE "-Wl,--wrap=${allocator}")
     endforeach()
+endif()
+
+target_compile_definitions(nethack PRIVATE RP2040_MUTABLE_QUEST=1)
+
+# Keep SDK, platform wrappers and third-party libraries outside LTO. In
+# particular, SDK assembly and linker printf wrappers need ordinary objects.
+if(NETHACK_LTO)
+    set_property(SOURCE ${SRCS} APPEND PROPERTY COMPILE_OPTIONS -flto -fipa-pta)
+    target_link_options(nethack PRIVATE -flto=${NETHACK_LTO_JOBS}
+            -flto-partition=one -fipa-pta -Oz)
 endif()

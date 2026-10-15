@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Build the RP2040 NetHack image; Python handles data packing and image checks.
 set -eu
+export PYTHONDONTWRITEBYTECODE=1
 here=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 recipe_args=()
 qemu_generators=0

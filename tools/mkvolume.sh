@@ -21,6 +21,7 @@
 #   size <n>              volume size in bytes
 #   flash_size <n>        flash capacity to check the above against
 #   name <stem>           output is <stem>-volume.img/.uf2
+#   root_entries <n>      FAT12/16 root slots, multiple of 16 (default 512)
 #   flash <yes|no>        emit a UF2 for the board (default yes)
 #   file <path> [name]    copy a host file in, under its own name by default
 #   empty <name>          create an empty file on the volume
@@ -61,6 +62,7 @@ LABEL=GAMEFLASH
 OFFSET=0x180000
 SIZE=524288
 FLASH_BYTES=$((2 * 1024 * 1024))
+ROOT_ENTRIES=512
 TO_FLASH=yes
 FILES=""
 EMPTIES=""
@@ -89,6 +91,7 @@ FIELDS
         size)       SIZE=$a ;;
         flash_size) FLASH_BYTES=$a ;;
         flash)      TO_FLASH=$a ;;
+        root_entries) ROOT_ENTRIES=$a ;;
         file)
             [ -n "$a" ] || { echo "error: 'file' with no path" >&2; exit 1; }
             #
@@ -208,9 +211,24 @@ truncate -s "$SIZE_N" "$IMG"
 # state files (NetHack's level files are a few KB each), where 2 KB clusters
 # leave up to 1.5 KB of slack per file; 512-byte clusters avoid that.  Larger
 # volumes, which means an SD card, keep mkfs' size-appropriate default.
+case "$ROOT_ENTRIES" in
+    ''|*[!0-9]*) echo "error: root_entries must be a positive multiple of 16" >&2; exit 1 ;;
+esac
+if [ "$ROOT_ENTRIES" -lt 16 ] || [ "$ROOT_ENTRIES" -gt 65520 ] || [ $((ROOT_ENTRIES % 16)) -ne 0 ]; then
+    echo "error: root_entries must be a multiple of 16 from 16 to 65520" >&2; exit 1
+fi
+ROOT_OPT="-r $ROOT_ENTRIES"
+if [ "$FATTYPE" = 32 ]; then
+    ROOT_OPT=
+    if [ "$ROOT_ENTRIES" -ne 512 ]; then
+        echo "error: root_entries is only supported for FAT12/16" >&2; exit 1
+    fi
+fi
 CLUSTER_OPT=
-if [ "$FATTYPE" = 12 ]; then CLUSTER_OPT="-s 1"; fi
-"$MKFS" -F "$FATTYPE" -n "$LABEL" -S 512 $CLUSTER_OPT "$IMG" >/dev/null
+# Flash has no CHS geometry. One sector per track prevents mkfs from
+# discarding a partial track and mtools from rounding the usable geometry.
+if [ "$FATTYPE" = 12 ]; then CLUSTER_OPT="-s 1 -g 1/1"; fi
+"$MKFS" -F "$FATTYPE" -n "$LABEL" -S 512 $ROOT_OPT $CLUSTER_OPT "$IMG" >/dev/null
 
 # --- contents ----------------------------------------------------------
 

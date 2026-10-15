@@ -25,16 +25,17 @@
  /* An example of one alternative you might want to use: */
  /* #define COMPRESS "/usr/local/bin/gzip" */ /* FSF gzip compression */
  /* #define COMPRESS_EXTENSION ".gz" */       /* normal gzip extension */
-@@ -303,7 +306,7 @@
+@@ -303,15 +306,15 @@
   */
  
  /* # define INTERNAL_COMP */ /* defines both ZEROCOMP and RLECOMP */
 -/* # define ZEROCOMP      */ /* Support ZEROCOMP compression */
+-/* # define RLECOMP       */ /* Support RLECOMP compression  */
 +# define ZEROCOMP         /* pico-bare: codec is Tamp (src/save.c, src/restore.c) */
- /* # define RLECOMP       */ /* Support RLECOMP compression  */
++# define RLECOMP            /* Compress repeated remembered map squares. */
  
  /*
-@@ -311,7 +314,7 @@
+  *      Data librarian.  Defining DLB places most of the support files into
   *      a tar-like file, thus making a neater installation.  See *conf.h
   *      for detailed configuration.
   */
@@ -117,6 +118,20 @@
 +extern const struct ext_func_tab extcmdlist[];
  
  #endif /* FUNC_TAB_H */
+--- a/include/hack.h
++++ b/include/hack.h
+@@ -205,9 +205,9 @@
+ 
+ #define MATCH_WARN_OF_MON(mon)                                               \
+     (Warn_of_mon && ((context.warntype.obj                                   \
+-                      && (context.warntype.obj & (mon)->data->mflags2))      \
++                      && (context.warntype.obj & NH_PM_FLAGS2((mon)->data)))      \
+                      || (context.warntype.polyd                              \
+-                         && (context.warntype.polyd & (mon)->data->mflags2)) \
++                         && (context.warntype.polyd & NH_PM_FLAGS2((mon)->data))) \
+                      || (context.warntype.species                            \
+                          && (context.warntype.species == (mon)->data))))
+ 
 --- a/include/mkroom.h
 +++ b/include/mkroom.h
 @@ -19,7 +19,7 @@
@@ -137,6 +152,118 @@
  /* the normal rooms on the current level are described in rooms[0..n] for
   * some n<MAXNROFROOMS
   * the vault, if any, is described by rooms[n+1]
+--- a/include/mondata.h
++++ b/include/mondata.h
+@@ -70,7 +70,7 @@
+ #define flaming(ptr)                                                     \
+     ((ptr) == &mons[PM_FIRE_VORTEX] || (ptr) == &mons[PM_FLAMING_SPHERE] \
+      || (ptr) == &mons[PM_FIRE_ELEMENTAL] || (ptr) == &mons[PM_SALAMANDER])
+-#define is_silent(ptr) ((ptr)->msound == MS_SILENT)
++#define is_silent(ptr) (NH_PM_SOUND((ptr)) == MS_SILENT)
+ #define unsolid(ptr) (((ptr)->mflags1 & M1_UNSOLID) != 0L)
+ #define mindless(ptr) (((ptr)->mflags1 & M1_MINDLESS) != 0L)
+ #define humanoid(ptr) (((ptr)->mflags1 & M1_HUMANOID) != 0L)
+@@ -97,62 +97,62 @@
+ #define carnivorous(ptr) (((ptr)->mflags1 & M1_CARNIVORE) != 0L)
+ #define herbivorous(ptr) (((ptr)->mflags1 & M1_HERBIVORE) != 0L)
+ #define metallivorous(ptr) (((ptr)->mflags1 & M1_METALLIVORE) != 0L)
+-#define polyok(ptr) (((ptr)->mflags2 & M2_NOPOLY) == 0L)
+-#define is_shapeshifter(ptr) (((ptr)->mflags2 & M2_SHAPESHIFTER) != 0L)
+-#define is_undead(ptr) (((ptr)->mflags2 & M2_UNDEAD) != 0L)
+-#define is_were(ptr) (((ptr)->mflags2 & M2_WERE) != 0L)
+-#define is_elf(ptr) (((ptr)->mflags2 & M2_ELF) != 0L)
+-#define is_dwarf(ptr) (((ptr)->mflags2 & M2_DWARF) != 0L)
+-#define is_gnome(ptr) (((ptr)->mflags2 & M2_GNOME) != 0L)
+-#define is_orc(ptr) (((ptr)->mflags2 & M2_ORC) != 0L)
+-#define is_human(ptr) (((ptr)->mflags2 & M2_HUMAN) != 0L)
+-#define your_race(ptr) (((ptr)->mflags2 & urace.selfmask) != 0L)
++#define polyok(ptr) ((NH_PM_FLAGS2((ptr)) & M2_NOPOLY) == 0L)
++#define is_shapeshifter(ptr) ((NH_PM_FLAGS2((ptr)) & M2_SHAPESHIFTER) != 0L)
++#define is_undead(ptr) ((NH_PM_FLAGS2((ptr)) & M2_UNDEAD) != 0L)
++#define is_were(ptr) ((NH_PM_FLAGS2((ptr)) & M2_WERE) != 0L)
++#define is_elf(ptr) ((NH_PM_FLAGS2((ptr)) & M2_ELF) != 0L)
++#define is_dwarf(ptr) ((NH_PM_FLAGS2((ptr)) & M2_DWARF) != 0L)
++#define is_gnome(ptr) ((NH_PM_FLAGS2((ptr)) & M2_GNOME) != 0L)
++#define is_orc(ptr) ((NH_PM_FLAGS2((ptr)) & M2_ORC) != 0L)
++#define is_human(ptr) ((NH_PM_FLAGS2((ptr)) & M2_HUMAN) != 0L)
++#define your_race(ptr) ((NH_PM_FLAGS2((ptr)) & urace.selfmask) != 0L)
+ #define is_bat(ptr)                                         \
+     ((ptr) == &mons[PM_BAT] || (ptr) == &mons[PM_GIANT_BAT] \
+      || (ptr) == &mons[PM_VAMPIRE_BAT])
+ #define is_bird(ptr) ((ptr)->mlet == S_BAT && !is_bat(ptr))
+-#define is_giant(ptr) (((ptr)->mflags2 & M2_GIANT) != 0L)
++#define is_giant(ptr) ((NH_PM_FLAGS2((ptr)) & M2_GIANT) != 0L)
+ #define is_golem(ptr) ((ptr)->mlet == S_GOLEM)
+-#define is_domestic(ptr) (((ptr)->mflags2 & M2_DOMESTIC) != 0L)
+-#define is_demon(ptr) (((ptr)->mflags2 & M2_DEMON) != 0L)
+-#define is_mercenary(ptr) (((ptr)->mflags2 & M2_MERC) != 0L)
+-#define is_male(ptr) (((ptr)->mflags2 & M2_MALE) != 0L)
+-#define is_female(ptr) (((ptr)->mflags2 & M2_FEMALE) != 0L)
+-#define is_neuter(ptr) (((ptr)->mflags2 & M2_NEUTER) != 0L)
+-#define is_wanderer(ptr) (((ptr)->mflags2 & M2_WANDER) != 0L)
+-#define always_hostile(ptr) (((ptr)->mflags2 & M2_HOSTILE) != 0L)
+-#define always_peaceful(ptr) (((ptr)->mflags2 & M2_PEACEFUL) != 0L)
+-#define race_hostile(ptr) (((ptr)->mflags2 & urace.hatemask) != 0L)
+-#define race_peaceful(ptr) (((ptr)->mflags2 & urace.lovemask) != 0L)
+-#define extra_nasty(ptr) (((ptr)->mflags2 & M2_NASTY) != 0L)
+-#define strongmonst(ptr) (((ptr)->mflags2 & M2_STRONG) != 0L)
++#define is_domestic(ptr) ((NH_PM_FLAGS2((ptr)) & M2_DOMESTIC) != 0L)
++#define is_demon(ptr) ((NH_PM_FLAGS2((ptr)) & M2_DEMON) != 0L)
++#define is_mercenary(ptr) ((NH_PM_FLAGS2((ptr)) & M2_MERC) != 0L)
++#define is_male(ptr) ((NH_PM_FLAGS2((ptr)) & M2_MALE) != 0L)
++#define is_female(ptr) ((NH_PM_FLAGS2((ptr)) & M2_FEMALE) != 0L)
++#define is_neuter(ptr) ((NH_PM_FLAGS2((ptr)) & M2_NEUTER) != 0L)
++#define is_wanderer(ptr) ((NH_PM_FLAGS2((ptr)) & M2_WANDER) != 0L)
++#define always_hostile(ptr) ((NH_PM_FLAGS2((ptr)) & M2_HOSTILE) != 0L)
++#define always_peaceful(ptr) ((NH_PM_FLAGS2((ptr)) & M2_PEACEFUL) != 0L)
++#define race_hostile(ptr) ((NH_PM_FLAGS2((ptr)) & urace.hatemask) != 0L)
++#define race_peaceful(ptr) ((NH_PM_FLAGS2((ptr)) & urace.lovemask) != 0L)
++#define extra_nasty(ptr) ((NH_PM_FLAGS2((ptr)) & M2_NASTY) != 0L)
++#define strongmonst(ptr) ((NH_PM_FLAGS2((ptr)) & M2_STRONG) != 0L)
+ #define can_breathe(ptr) attacktype(ptr, AT_BREA)
+ #define cantwield(ptr) (nohands(ptr) || verysmall(ptr))
+ #define could_twoweap(ptr) ((ptr)->mattk[1].aatyp == AT_WEAP)
+ #define cantweararm(ptr) (breakarm(ptr) || sliparm(ptr))
+-#define throws_rocks(ptr) (((ptr)->mflags2 & M2_ROCKTHROW) != 0L)
+-#define type_is_pname(ptr) (((ptr)->mflags2 & M2_PNAME) != 0L)
+-#define is_lord(ptr) (((ptr)->mflags2 & M2_LORD) != 0L)
+-#define is_prince(ptr) (((ptr)->mflags2 & M2_PRINCE) != 0L)
++#define throws_rocks(ptr) ((NH_PM_FLAGS2((ptr)) & M2_ROCKTHROW) != 0L)
++#define type_is_pname(ptr) ((NH_PM_FLAGS2((ptr)) & M2_PNAME) != 0L)
++#define is_lord(ptr) ((NH_PM_FLAGS2((ptr)) & M2_LORD) != 0L)
++#define is_prince(ptr) ((NH_PM_FLAGS2((ptr)) & M2_PRINCE) != 0L)
+ #define is_ndemon(ptr) \
+-    (is_demon(ptr) && (((ptr)->mflags2 & (M2_LORD | M2_PRINCE)) == 0L))
++    (is_demon(ptr) && ((NH_PM_FLAGS2((ptr)) & (M2_LORD | M2_PRINCE)) == 0L))
+ #define is_dlord(ptr) (is_demon(ptr) && is_lord(ptr))
+ #define is_dprince(ptr) (is_demon(ptr) && is_prince(ptr))
+-#define is_minion(ptr) (((ptr)->mflags2 & M2_MINION) != 0L)
+-#define likes_gold(ptr) (((ptr)->mflags2 & M2_GREEDY) != 0L)
+-#define likes_gems(ptr) (((ptr)->mflags2 & M2_JEWELS) != 0L)
+-#define likes_objs(ptr) (((ptr)->mflags2 & M2_COLLECT) != 0L || is_armed(ptr))
+-#define likes_magic(ptr) (((ptr)->mflags2 & M2_MAGIC) != 0L)
++#define is_minion(ptr) ((NH_PM_FLAGS2((ptr)) & M2_MINION) != 0L)
++#define likes_gold(ptr) ((NH_PM_FLAGS2((ptr)) & M2_GREEDY) != 0L)
++#define likes_gems(ptr) ((NH_PM_FLAGS2((ptr)) & M2_JEWELS) != 0L)
++#define likes_objs(ptr) ((NH_PM_FLAGS2((ptr)) & M2_COLLECT) != 0L || is_armed(ptr))
++#define likes_magic(ptr) ((NH_PM_FLAGS2((ptr)) & M2_MAGIC) != 0L)
+ #define webmaker(ptr) \
+     ((ptr) == &mons[PM_CAVE_SPIDER] || (ptr) == &mons[PM_GIANT_SPIDER])
+ #define is_unicorn(ptr) ((ptr)->mlet == S_UNICORN && likes_gems(ptr))
+ #define is_longworm(ptr)                                                   \
+     (((ptr) == &mons[PM_BABY_LONG_WORM]) || ((ptr) == &mons[PM_LONG_WORM]) \
+      || ((ptr) == &mons[PM_LONG_WORM_TAIL]))
+-#define is_covetous(ptr) (((ptr)->mflags3 & M3_COVETOUS))
+-#define infravision(ptr) (((ptr)->mflags3 & M3_INFRAVISION))
+-#define infravisible(ptr) (((ptr)->mflags3 & M3_INFRAVISIBLE))
+-#define is_displacer(ptr) (((ptr)->mflags3 & M3_DISPLACES) != 0L)
++#define is_covetous(ptr) ((NH_PM_FLAGS3((ptr)) & M3_COVETOUS))
++#define infravision(ptr) ((NH_PM_FLAGS3((ptr)) & M3_INFRAVISION))
++#define infravisible(ptr) ((NH_PM_FLAGS3((ptr)) & M3_INFRAVISIBLE))
++#define is_displacer(ptr) ((NH_PM_FLAGS3((ptr)) & M3_DISPLACES) != 0L)
+ #define is_mplayer(ptr) \
+     (((ptr) >= &mons[PM_ARCHEOLOGIST]) && ((ptr) <= &mons[PM_WIZARD]))
+ #define is_watch(ptr) \
 --- a/include/patchlevel.h
 +++ b/include/patchlevel.h
 @@ -14,7 +14,7 @@
@@ -144,7 +271,7 @@
   * and save files.
   */
 -#define EDITLEVEL 0
-+#define EDITLEVEL 129 /* RP2040 single checkpoint with retained level files */
++#define EDITLEVEL 130 /* RP2040 single checkpoint with retained level files */
  
  #define COPYRIGHT_BANNER_A "NetHack, Copyright 1985-2023"
  #define COPYRIGHT_BANNER_B \
@@ -153,7 +280,7 @@
   * with all four numbers specified as two hexadecimal digits.
   */
 -#define VERSION_COMPATIBILITY 0x03060002L
-+#define VERSION_COMPATIBILITY 0x03060781L
++#define VERSION_COMPATIBILITY 0x03060782L
  
  /****************************************************************************/
  /* Version 3.6.x */
@@ -168,6 +295,60 @@
  
  #define VERY_SLOW 3
  #define SLOW_SPEED 9
+@@ -78,4 +78,21 @@
+ /* mons[SPECIAL_PM] through mons[NUMMONS-1], inclusive, are
+    never generated randomly and cannot be polymorphed into */
+ 
++
++/* Quest-specific traits are writable without moving the monster table to RAM.
++ * Data generators retain direct table access and identical structure layout. */
++#ifdef RP2040_MUTABLE_QUEST
++struct permonst *nh_pm_traits(const struct permonst *) __attribute__((pure));
++void nh_quest_traits_init(int, int, int);
++#define NH_PM_FLAGS2(p) (nh_pm_traits(p)->mflags2)
++#define NH_PM_FLAGS3(p) (nh_pm_traits(p)->mflags3)
++#define NH_PM_ALIGN(p) (nh_pm_traits(p)->maligntyp)
++#define NH_PM_SOUND(p) (nh_pm_traits(p)->msound)
++#else
++#define NH_PM_FLAGS2(p) ((p)->mflags2)
++#define NH_PM_FLAGS3(p) ((p)->mflags3)
++#define NH_PM_ALIGN(p) ((p)->maligntyp)
++#define NH_PM_SOUND(p) ((p)->msound)
++#endif
++
+ #endif /* PERMONST_H */
+--- a/include/rm.h
++++ b/include/rm.h
+@@ -416,18 +416,19 @@
+  * must be updated to consider the field.
+  */
+ struct rm {
+-    int glyph;               /* what the hero thinks is there */
++    short glyph;               /* what the hero thinks is there */
+     schar typ;               /* what is really there */
+     uchar seenv;             /* seen vector */
+-    Bitfield(flags, 5);      /* extra information for typ */
+-    Bitfield(horizontal, 1); /* wall/door/etc is horiz. (more typ info) */
+-    Bitfield(lit, 1);        /* speed hack for lit rooms */
+-    Bitfield(waslit, 1);     /* remember if a location was lit */
+-
+-    Bitfield(roomno, 6); /* room # for special rooms */
+-    Bitfield(edge, 1);   /* marks boundaries for special rooms*/
+-    Bitfield(candig, 1); /* Exception to Can_dig_down; was a trapdoor */
+-};
++    unsigned char flags : 5;      /* extra information for typ */
++    unsigned char horizontal : 1; /* wall/door/etc is horiz. (more typ info) */
++    unsigned char lit : 1;        /* speed hack for lit rooms */
++    unsigned char waslit : 1;     /* remember if a location was lit */
++
++    unsigned char roomno : 6; /* room # for special rooms */
++    unsigned char edge : 1;   /* marks boundaries for special rooms*/
++    unsigned char candig : 1; /* Exception to Can_dig_down; was a trapdoor */
++};
++typedef char nh_map_square_is_six_bytes[(sizeof(struct rm) == 6) ? 1 : -1];
+ 
+ #define SET_TYPLIT(x, y, ttyp, llit)                              \
+     {                                                             \
 --- a/include/unixconf.h
 +++ b/include/unixconf.h
 @@ -34,7 +34,7 @@
@@ -210,6 +391,48 @@
  
  /*
   * If you want the static parts of your playground on a read-only file
+--- a/src/apply.c
++++ b/src/apply.c
+@@ -804,7 +804,7 @@
+                     m_unleash(mtmp, FALSE);
+                 } else {
+                     You("pull on the leash.");
+-                    if (mtmp->data->msound != MS_SILENT)
++                    if (NH_PM_SOUND(mtmp->data) != MS_SILENT)
+                         switch (rn2(3)) {
+                         case 0:
+                             growl(mtmp);
+--- a/src/artifact.c
++++ b/src/artifact.c
+@@ -771,14 +771,14 @@
+     } else if (weap->spfx & SPFX_DFLAG1) {
+         return ((ptr->mflags1 & weap->mtype) != 0L);
+     } else if (weap->spfx & SPFX_DFLAG2) {
+-        return ((ptr->mflags2 & weap->mtype)
++        return ((NH_PM_FLAGS2(ptr) & weap->mtype)
+                 || (yours
+                     && ((!Upolyd && (urace.selfmask & weap->mtype))
+                         || ((weap->mtype & M2_WERE) && u.ulycn >= LOW_PM))));
+     } else if (weap->spfx & SPFX_DALIGN) {
+         return yours ? (u.ualign.type != weap->alignment)
+-                     : (ptr->maligntyp == A_NONE
+-                        || sgn(ptr->maligntyp) != weap->alignment);
++                     : (NH_PM_ALIGN(ptr) == A_NONE
++                        || sgn(NH_PM_ALIGN(ptr)) != weap->alignment);
+     } else if (weap->spfx & SPFX_ATTK) {
+         struct obj *defending_weapon = (yours ? uwep : MON_WEP(mtmp));
+ 
+--- a/src/bones.c
++++ b/src/bones.c
+@@ -395,7 +395,7 @@
+             continue;
+         mptr = mtmp->data;
+         if (mtmp->iswiz || mptr == &mons[PM_MEDUSA]
+-            || mptr->msound == MS_NEMESIS || mptr->msound == MS_LEADER
++            || NH_PM_SOUND(mptr) == MS_NEMESIS || NH_PM_SOUND(mptr) == MS_LEADER
+             || mptr == &mons[PM_VLAD_THE_IMPALER]
+             || (mptr == &mons[PM_ORACLE] && !fixuporacle(mtmp)))
+             mongone(mtmp);
 --- /dev/null
 +++ b/src/checkpoint.c
 @@ -0,0 +1,118 @@
@@ -333,6 +556,15 @@
 +}
 --- a/src/cmd.c
 +++ b/src/cmd.c
+@@ -713,7 +713,7 @@
+     } else if (is_unicorn(youmonst.data)) {
+         use_unicorn_horn((struct obj *) 0);
+         return 1;
+-    } else if (youmonst.data->msound == MS_SHRIEK) {
++    } else if (NH_PM_SOUND(youmonst.data) == MS_SHRIEK) {
+         You("shriek.");
+         if (u.uburied)
+             pline("Unfortunately sound does not carry well through rock.");
 @@ -3352,7 +3352,7 @@
  }
  
@@ -344,6 +576,15 @@
      { M('?'), "?", "list all extended commands",
 --- a/src/display.c
 +++ b/src/display.c
+@@ -1292,7 +1292,7 @@
+         newsym(mon->mx, mon->my);
+         if (mon->wormno)
+             see_wsegs(mon);
+-        if (Warn_of_mon && (context.warntype.obj & mon->data->mflags2) != 0L)
++        if (Warn_of_mon && (context.warntype.obj & NH_PM_FLAGS2(mon->data)) != 0L)
+             new_warn_obj_cnt++;
+     }
+     /*
 @@ -1465,8 +1465,9 @@
  
  typedef struct {
@@ -357,7 +598,14 @@
  static char gbuf_start[ROWNO];
 --- a/src/do.c
 +++ b/src/do.c
-@@ -1467,6 +1467,8 @@
+@@ -1464,9 +1464,15 @@
+         if (Is_waterlevel(&u.uz) || Is_airlevel(&u.uz))
+             restore_waterlevel(-1);
+         (void) nhclose(fd);
++        /* The active level is now in RAM. Its on-disk version is stale as
++         * soon as play resumes; keep only inactive levels on flash. The
++         * single checkpoint has already been consumed and INSURANCE is off. */
++        delete_levelfile(new_ledger);
          oinit(); /* reassign level dependent obj probabilities */
      }
      reglyph_darkroom();
@@ -366,6 +614,94 @@
      u.uinwater = 0;
      /* do this prior to level-change pline messages */
      vision_reset();         /* clear old level's line-of-sight */
+@@ -1877,7 +1883,7 @@
+ 
+     /* corpse will revive somewhere else if there is a monster in the way;
+        Riders get a chance to try to bump the obstacle out of their way */
+-    if ((mptr->mflags3 & M3_DISPLACES) != 0 && body->where == OBJ_FLOOR
++    if ((NH_PM_FLAGS3(mptr) & M3_DISPLACES) != 0 && body->where == OBJ_FLOOR
+         && get_obj_location(body, &x, &y, 0) && (mtmp = m_at(x, y)) != 0) {
+         boolean notice_it = canseemon(mtmp); /* before rloc() */
+         char *monname = Monnam(mtmp);
+--- a/src/do_name.c
++++ b/src/do_name.c
+@@ -1206,7 +1206,7 @@
+             pline("%s doesn't like being called names!", upstart(monnambuf));
+     } else if (mtmp->isshk
+                && !(Deaf || mtmp->msleeping || !mtmp->mcanmove
+-                    || mtmp->data->msound <= MS_ANIMAL)) {
++                    || NH_PM_SOUND(mtmp->data) <= MS_ANIMAL)) {
+         if (!alreadynamed(mtmp, monnambuf, buf))
+             verbalize("I'm %s, not %s.", shkname(mtmp), buf);
+     } else if (mtmp->ispriest || mtmp->isminion || mtmp->isshk) {
+--- a/src/dog.c
++++ b/src/dog.c
+@@ -869,7 +869,7 @@
+ {
+     /* The Wiz, Medusa and the quest nemeses aren't even made peaceful. */
+     if (mtmp->iswiz || mtmp->data == &mons[PM_MEDUSA]
+-        || (mtmp->data->mflags3 & M3_WANTSARTI))
++        || (NH_PM_FLAGS3(mtmp->data) & M3_WANTSARTI))
+         return FALSE;
+ 
+     /* worst case, at least it'll be peaceful. */
+--- a/src/dogmove.c
++++ b/src/dogmove.c
+@@ -696,8 +696,8 @@
+                     return 1;
+             } else {
+                 /* Quest leaders and guardians are always seen */
+-                if (pal->data->msound == MS_LEADER
+-                    || pal->data->msound == MS_GUARDIAN)
++                if (NH_PM_SOUND(pal->data) == MS_LEADER
++                    || NH_PM_SOUND(pal->data) == MS_GUARDIAN)
+                     return 1;
+             }
+         }
+@@ -736,8 +736,8 @@
+             faith2 = FALSE;
+ 
+         /* Never target quest friendlies */
+-        if (mtarg->data->msound == MS_LEADER
+-            || mtarg->data->msound == MS_GUARDIAN)
++        if (NH_PM_SOUND(mtarg->data) == MS_LEADER
++            || NH_PM_SOUND(mtarg->data) == MS_GUARDIAN)
+             return -5000L;
+         /* D: Fixed angelic beings using gaze attacks on coaligned priests */
+         if (faith1 && faith2 && align1 == align2 && mtarg->mpeaceful) {
+@@ -1011,8 +1011,8 @@
+                 || (mtmp2->data == &mons[PM_GELATINOUS_CUBE] && rn2(10))
+                 || (max_passive_dmg(mtmp2, mtmp) >= mtmp->mhp)
+                 || ((mtmp->mhp * 4 < mtmp->mhpmax
+-                     || mtmp2->data->msound == MS_GUARDIAN
+-                     || mtmp2->data->msound == MS_LEADER) && mtmp2->mpeaceful
++                     || NH_PM_SOUND(mtmp2->data) == MS_GUARDIAN
++                     || NH_PM_SOUND(mtmp2->data) == MS_LEADER) && mtmp2->mpeaceful
+                     && !Conflict)
+                 || (touch_petrifies(mtmp2->data) && !resists_ston(mtmp)))
+                 continue;
+--- a/src/dokick.c
++++ b/src/dokick.c
+@@ -1718,7 +1718,7 @@
+         if ((where & MIGR_TO_SPECIES) == 0)
+             continue;
+ 
+-        if ((mtmp->data->mflags2 & otmp->corpsenm) != 0) {
++        if ((NH_PM_FLAGS2(mtmp->data) & otmp->corpsenm) != 0) {
+             obj_extract_self(otmp);
+             otmp->owornmask = 0L;
+             otmp->ox = otmp->oy = 0;
+--- a/src/dothrow.c
++++ b/src/dothrow.c
+@@ -1804,7 +1804,7 @@
+ register struct obj *obj;
+ {
+     char buf[BUFSZ];
+-    boolean is_buddy = sgn(mon->data->maligntyp) == sgn(u.ualign.type);
++    boolean is_buddy = sgn(NH_PM_ALIGN(mon->data)) == sgn(u.ualign.type);
+     boolean is_gem = objects[obj->otyp].oc_material == GEMSTONE;
+     int ret = 0;
+     static NEARDATA const char nogood[] = " is not interested in your junk.";
 --- a/src/drawing.c
 +++ b/src/drawing.c
 @@ -548,7 +548,7 @@
@@ -563,6 +899,235 @@
      char *bufp, *commentp, *altp;
  
      if (strlen(buf) >= BUFSZ)
+--- a/src/makemon.c
++++ b/src/makemon.c
+@@ -12,7 +12,7 @@
+    for instance) but is for the priests and monks we use it for... */
+ #define quest_mon_represents_role(mptr, role_pm) \
+     (mptr->mlet == S_HUMAN && Role_if(role_pm)   \
+-     && (mptr->msound == MS_LEADER || mptr->msound == MS_NEMESIS))
++     && (NH_PM_SOUND(mptr) == MS_LEADER || NH_PM_SOUND(mptr) == MS_NEMESIS))
+ 
+ STATIC_DCL boolean FDECL(uncommon, (int));
+ STATIC_DCL int FDECL(align_shift, (struct permonst *));
+@@ -256,7 +256,7 @@
+                 if (!rn2(50))
+                     (void) mongets(mtmp, CRYSTAL_BALL);
+             }
+-        } else if (ptr->msound == MS_PRIEST
++        } else if (NH_PM_SOUND(ptr) == MS_PRIEST
+                    || quest_mon_represents_role(ptr, PM_PRIEST)) {
+             otmp = mksobj(MACE, FALSE, FALSE);
+             otmp->spe = rnd(3);
+@@ -266,7 +266,7 @@
+         } else if (mm == PM_NINJA) { /* extra quest villains */
+             (void) mongets(mtmp, rn2(4) ? SHURIKEN : DART);
+             (void) mongets(mtmp, rn2(4) ? SHORT_SWORD : AXE);
+-        } else if (ptr->msound == MS_GUARDIAN) {
++        } else if (NH_PM_SOUND(ptr) == MS_GUARDIAN) {
+             /* quest "guardians" */
+             switch (mm) {
+             case PM_STUDENT:
+@@ -686,7 +686,7 @@
+             case 3:
+                 (void) mongets(mtmp, WAN_STRIKING);
+             }
+-        } else if (ptr->msound == MS_PRIEST
++        } else if (NH_PM_SOUND(ptr) == MS_PRIEST
+                    || quest_mon_represents_role(ptr, PM_PRIEST)) {
+             (void) mongets(mtmp, rn2(7) ? ROBE
+                                         : rn2(3) ? CLOAK_OF_PROTECTION
+@@ -1204,7 +1204,7 @@
+     if (!mtmp->m_id)
+         mtmp->m_id = context.ident++; /* ident overflowed */
+     set_mon_data(mtmp, ptr); /* mtmp->data = ptr; */
+-    if (ptr->msound == MS_LEADER && quest_info(MS_LEADER) == mndx)
++    if (NH_PM_SOUND(ptr) == MS_LEADER && quest_info(MS_LEADER) == mndx)
+         quest_status.leader_m_id = mtmp->m_id;
+     mtmp->mnum = mndx;
+ 
+@@ -1218,9 +1218,9 @@
+     /* leader and nemesis gender is usually hardcoded in mons[],
+        but for ones which can be random, it has already been chosen
+        (in role_init(), for possible use by the quest pager code) */
+-    else if (ptr->msound == MS_LEADER && quest_info(MS_LEADER) == mndx)
++    else if (NH_PM_SOUND(ptr) == MS_LEADER && quest_info(MS_LEADER) == mndx)
+         mtmp->female = quest_status.ldrgend;
+-    else if (ptr->msound == MS_NEMESIS && quest_info(MS_NEMESIS) == mndx)
++    else if (NH_PM_SOUND(ptr) == MS_NEMESIS && quest_info(MS_NEMESIS) == mndx)
+         mtmp->female = quest_status.nemgend;
+     else
+         mtmp->female = rn2(2); /* ignored for neuters */
+@@ -1228,7 +1228,7 @@
+     if (In_sokoban(&u.uz) && !mindless(ptr)) /* know about traps here */
+         mtmp->mtrapseen = (1L << (PIT - 1)) | (1L << (HOLE - 1));
+     /* quest leader and nemesis both know about all trap types */
+-    if (ptr->msound == MS_LEADER || ptr->msound == MS_NEMESIS)
++    if (NH_PM_SOUND(ptr) == MS_LEADER || NH_PM_SOUND(ptr) == MS_NEMESIS)
+         mtmp->mtrapseen = ~0;
+ 
+     place_monster(mtmp, x, y);
+@@ -1269,7 +1269,7 @@
+             mtmp->mpeaceful = FALSE;
+         break;
+     case S_UNICORN:
+-        if (is_unicorn(ptr) && sgn(u.ualign.type) == sgn(ptr->maligntyp))
++        if (is_unicorn(ptr) && sgn(u.ualign.type) == sgn(NH_PM_ALIGN(ptr)))
+             mtmp->mpeaceful = TRUE;
+         break;
+     case S_BAT:
+@@ -1307,7 +1307,7 @@
+         mtmp = christen_monst(mtmp, rndghostname());
+     } else if (mndx == PM_CROESUS) {
+         mitem = TWO_HANDED_SWORD;
+-    } else if (ptr->msound == MS_NEMESIS) {
++    } else if (NH_PM_SOUND(ptr) == MS_NEMESIS) {
+         mitem = BELL_OF_OPENING;
+     } else if (mndx == PM_PESTILENCE) {
+         mitem = POT_SICKNESS;
+@@ -1326,7 +1326,7 @@
+             set_apparxy(mtmp);
+         }
+     }
+-    if (is_dprince(ptr) && ptr->msound == MS_BRIBE) {
++    if (is_dprince(ptr) && NH_PM_SOUND(ptr) == MS_BRIBE) {
+         mtmp->mpeaceful = mtmp->minvis = mtmp->perminvis = 1;
+         mtmp->mavenge = 0;
+         if (uwep && uwep->oartifact == ART_EXCALIBUR)
+@@ -1396,12 +1396,12 @@
+             discard_minvent(mtmp);
+         mtmp->minvent = (struct obj *) 0; /* caller expects this */
+     }
+-    if (ptr->mflags3 && !(mmflags & MM_NOWAIT)) {
+-        if (ptr->mflags3 & M3_WAITFORU)
++    if (NH_PM_FLAGS3(ptr) && !(mmflags & MM_NOWAIT)) {
++        if (NH_PM_FLAGS3(ptr) & M3_WAITFORU)
+             mtmp->mstrategy |= STRAT_WAITFORU;
+-        if (ptr->mflags3 & M3_CLOSE)
++        if (NH_PM_FLAGS3(ptr) & M3_CLOSE)
+             mtmp->mstrategy |= STRAT_CLOSE;
+-        if (ptr->mflags3 & (M3_WAITMASK | M3_COVETOUS))
++        if (NH_PM_FLAGS3(ptr) & (M3_WAITMASK | M3_COVETOUS))
+             mtmp->mstrategy |= STRAT_APPEARMSG;
+     }
+ 
+@@ -1471,7 +1471,7 @@
+     if (mvitals[mndx].mvflags & G_GONE)
+         return TRUE;
+     if (Inhell)
+-        return (boolean) (mons[mndx].maligntyp > A_NEUTRAL);
++        return (boolean) (NH_PM_ALIGN(&mons[mndx]) > A_NEUTRAL);
+     else
+         return (boolean) ((mons[mndx].geno & G_HELL) != 0);
+ }
+@@ -1499,13 +1499,13 @@
+         alshift = 0;
+         break;
+     case AM_LAWFUL:
+-        alshift = (ptr->maligntyp + 20) / (2 * ALIGNWEIGHT);
++        alshift = (NH_PM_ALIGN(ptr) + 20) / (2 * ALIGNWEIGHT);
+         break;
+     case AM_NEUTRAL:
+-        alshift = (20 - abs(ptr->maligntyp)) / ALIGNWEIGHT;
++        alshift = (20 - abs(NH_PM_ALIGN(ptr))) / ALIGNWEIGHT;
+         break;
+     case AM_CHAOTIC:
+-        alshift = (-(ptr->maligntyp - 20)) / (2 * ALIGNWEIGHT);
++        alshift = (-(NH_PM_ALIGN(ptr) - 20)) / (2 * ALIGNWEIGHT);
+         break;
+     }
+     return alshift;
+@@ -1683,7 +1683,7 @@
+      *                  order of strength.
+      */
+     for (last = first; last < SPECIAL_PM && mons[last].mlet == class; last++) {
+-        if (atyp != A_NONE && sgn(mons[last].maligntyp) != sgn(atyp))
++        if (atyp != A_NONE && sgn(NH_PM_ALIGN(&mons[last])) != sgn(atyp))
+             continue;
+         if (mk_gen_ok(last, G_GONE, mask)) {
+             /* consider it; don't reject a toostrong() monster if we
+@@ -2003,15 +2003,15 @@
+ peace_minded(ptr)
+ register struct permonst *ptr;
+ {
+-    aligntyp mal = ptr->maligntyp, ual = u.ualign.type;
++    aligntyp mal = NH_PM_ALIGN(ptr), ual = u.ualign.type;
+ 
+     if (always_peaceful(ptr))
+         return TRUE;
+     if (always_hostile(ptr))
+         return FALSE;
+-    if (ptr->msound == MS_LEADER || ptr->msound == MS_GUARDIAN)
++    if (NH_PM_SOUND(ptr) == MS_LEADER || NH_PM_SOUND(ptr) == MS_GUARDIAN)
+         return TRUE;
+-    if (ptr->msound == MS_NEMESIS)
++    if (NH_PM_SOUND(ptr) == MS_NEMESIS)
+         return FALSE;
+ 
+     if (race_peaceful(ptr))
+@@ -2055,7 +2055,7 @@
+ set_malign(mtmp)
+ struct monst *mtmp;
+ {
+-    schar mal = mtmp->data->maligntyp;
++    schar mal = NH_PM_ALIGN(mtmp->data);
+     boolean coaligned;
+ 
+     if (mtmp->ispriest || mtmp->isminion) {
+@@ -2071,7 +2071,7 @@
+     }
+ 
+     coaligned = (sgn(mal) == sgn(u.ualign.type));
+-    if (mtmp->data->msound == MS_LEADER) {
++    if (NH_PM_SOUND(mtmp->data) == MS_LEADER) {
+         mtmp->malign = -20;
+     } else if (mal == A_NONE) {
+         if (mtmp->mpeaceful)
+--- a/src/minion.c
++++ b/src/minion.c
+@@ -67,12 +67,12 @@
+ 
+         atyp = mon->ispriest ? EPRI(mon)->shralign
+                              : mon->isminion ? EMIN(mon)->min_align
+-                                             : (ptr->maligntyp == A_NONE)
++                                             : (NH_PM_ALIGN(ptr) == A_NONE)
+                                                    ? A_NONE
+-                                                   : sgn(ptr->maligntyp);
++                                                   : sgn(NH_PM_ALIGN(ptr));
+     } else {
+         ptr = &mons[PM_WIZARD_OF_YENDOR];
+-        atyp = (ptr->maligntyp == A_NONE) ? A_NONE : sgn(ptr->maligntyp);
++        atyp = (NH_PM_ALIGN(ptr) == A_NONE) ? A_NONE : sgn(NH_PM_ALIGN(ptr));
+     }
+ 
+     if (is_dprince(ptr) || (ptr == &mons[PM_WIZARD_OF_YENDOR])) {
+@@ -273,7 +273,7 @@
+     }
+     cash = money_cnt(invent);
+     demand = (cash * (rnd(80) + 20 * Athome))
+-           / (100 * (1 + (sgn(u.ualign.type) == sgn(mtmp->data->maligntyp))));
++           / (100 * (1 + (sgn(u.ualign.type) == sgn(NH_PM_ALIGN(mtmp->data)))));
+ 
+     if (!demand || multi < 0) { /* you have no gold or can't move */
+         mtmp->mpeaceful = 0;
+@@ -356,7 +356,7 @@
+     for (tryct = !In_endgame(&u.uz) ? 20 : 0; tryct > 0; --tryct) {
+         pm = rn1(PM_DEMOGORGON + 1 - PM_ORCUS, PM_ORCUS);
+         if (!(mvitals[pm].mvflags & G_GONE)
+-            && (atyp == A_NONE || sgn(mons[pm].maligntyp) == sgn(atyp)))
++            && (atyp == A_NONE || sgn(NH_PM_ALIGN(&mons[pm])) == sgn(atyp)))
+             return pm;
+     }
+     return dlord(atyp); /* approximate */
+@@ -371,7 +371,7 @@
+     for (tryct = !In_endgame(&u.uz) ? 20 : 0; tryct > 0; --tryct) {
+         pm = rn1(PM_YEENOGHU + 1 - PM_JUIBLEX, PM_JUIBLEX);
+         if (!(mvitals[pm].mvflags & G_GONE)
+-            && (atyp == A_NONE || sgn(mons[pm].maligntyp) == sgn(atyp)))
++            && (atyp == A_NONE || sgn(NH_PM_ALIGN(&mons[pm])) == sgn(atyp)))
+             return pm;
+     }
+     return ndemon(atyp); /* approximate */
 --- a/src/mklev.c
 +++ b/src/mklev.c
 @@ -155,7 +155,7 @@
@@ -677,6 +1242,123 @@
      nsubroom = 0;
      for (i = 0; i < nroom; i++) {
          rest_room(fd, &rooms[i]);
+--- a/src/mon.c
++++ b/src/mon.c
+@@ -1580,7 +1580,7 @@
+        or if defender can barge through too, don't let attacker
+        do so, otherwise they might just end up swapping places
+        again when defender gets its chance to move */
+-    if ((pa->mflags3 & M3_DISPLACES) != 0 && (pd->mflags3 & M3_DISPLACES) == 0
++    if ((NH_PM_FLAGS3(pa) & M3_DISPLACES) != 0 && (NH_PM_FLAGS3(pd) & M3_DISPLACES) == 0
+         /* no displacing grid bugs diagonally */
+         && !(magr->mx != mdef->mx && magr->my != mdef->my
+              && NODIAG(monsndx(pd)))
+@@ -2061,7 +2061,7 @@
+     }
+     if (mtmp->iswiz)
+         wizdead();
+-    if (mtmp->data->msound == MS_NEMESIS)
++    if (NH_PM_SOUND(mtmp->data) == MS_NEMESIS)
+         nemdead();
+     if (mtmp->data == &mons[PM_MEDUSA])
+         u.uachieve.killed_medusa = 1;
+@@ -2472,7 +2472,7 @@
+     }
+     if ((mtmp->mpeaceful && !rn2(2)) || mtmp->mtame)
+         change_luck(-1);
+-    if (is_unicorn(mdat) && sgn(u.ualign.type) == sgn(mdat->maligntyp)) {
++    if (is_unicorn(mdat) && sgn(u.ualign.type) == sgn(NH_PM_ALIGN(mdat))) {
+         change_luck(-5);
+         You_feel("guilty...");
+     }
+@@ -2487,9 +2487,9 @@
+         adjalign(-(u.ualign.record + (int) ALIGNLIM / 2));
+         pline("That was %sa bad idea...",
+               u.uevent.qcompleted ? "probably " : "");
+-    } else if (mdat->msound == MS_NEMESIS) { /* Real good! */
++    } else if (NH_PM_SOUND(mdat) == MS_NEMESIS) { /* Real good! */
+         adjalign((int) (ALIGNLIM / 4));
+-    } else if (mdat->msound == MS_GUARDIAN) { /* Bad */
++    } else if (NH_PM_SOUND(mdat) == MS_GUARDIAN) { /* Bad */
+         adjalign(-(int) (ALIGNLIM / 8));
+         if (!Hallucination)
+             pline("That was probably a bad idea...");
+@@ -2500,7 +2500,7 @@
+         /* cancel divine protection for killing your priest */
+         if (p_coaligned(mtmp))
+             u.ublessed = 0;
+-        if (mdat->maligntyp == A_NONE)
++        if (NH_PM_ALIGN(mdat) == A_NONE)
+             adjalign((int) (ALIGNLIM / 4)); /* BIG bonus */
+     } else if (mtmp->mtame) {
+         adjalign(-15); /* bad!! */
+@@ -2858,7 +2858,7 @@
+ m_respond(mtmp)
+ struct monst *mtmp;
+ {
+-    if (mtmp->data->msound == MS_SHRIEK) {
++    if (NH_PM_SOUND(mtmp->data) == MS_SHRIEK) {
+         if (!Deaf) {
+             pline("%s shrieks.", Monnam(mtmp));
+             stop_occupation();
+--- a/src/mondata.c
++++ b/src/mondata.c
+@@ -336,7 +336,7 @@
+ can_blow(mtmp)
+ struct monst *mtmp;
+ {
+-    if ((is_silent(mtmp->data) || mtmp->data->msound == MS_BUZZ)
++    if ((is_silent(mtmp->data) || NH_PM_SOUND(mtmp->data) == MS_BUZZ)
+         && (breathless(mtmp->data) || verysmall(mtmp->data)
+             || !has_head(mtmp->data) || mtmp->data->mlet == S_EEL))
+         return FALSE;
+@@ -352,7 +352,7 @@
+ {
+     if ((mtmp == &youmonst && Strangled)
+         || is_silent(mtmp->data) || !has_head(mtmp->data)
+-        || mtmp->data->msound == MS_BUZZ || mtmp->data->msound == MS_BURBLE)
++        || NH_PM_SOUND(mtmp->data) == MS_BUZZ || NH_PM_SOUND(mtmp->data) == MS_BURBLE)
+         return FALSE;
+     return TRUE;
+ }
+@@ -941,7 +941,7 @@
+         return TRUE;
+     /* stalking types follow, but won't when fleeing unless you hold
+        the Amulet */
+-    return (boolean) ((mtmp->data->mflags2 & M2_STALK)
++    return (boolean) ((NH_PM_FLAGS2(mtmp->data) & M2_STALK)
+                       && (!mtmp->mflee || u.uhave.amulet));
+ }
+ 
+--- a/src/monmove.c
++++ b/src/monmove.c
+@@ -425,7 +425,7 @@
+         (void) rloc(mtmp, TRUE);
+         return 0;
+     }
+-    if (mdat->msound == MS_SHRIEK && !um_dist(mtmp->mx, mtmp->my, 1))
++    if (NH_PM_SOUND(mdat) == MS_SHRIEK && !um_dist(mtmp->mx, mtmp->my, 1))
+         m_respond(mtmp);
+     if (mdat == &mons[PM_MEDUSA] && couldsee(mtmp->mx, mtmp->my))
+         m_respond(mtmp);
+@@ -466,7 +466,7 @@
+     }
+ 
+     /* Demonic Blackmail! */
+-    if (nearby && mdat->msound == MS_BRIBE && mtmp->mpeaceful && !mtmp->mtame
++    if (nearby && NH_PM_SOUND(mdat) == MS_BRIBE && mtmp->mpeaceful && !mtmp->mtame
+         && !u.uswallow) {
+         if (mtmp->mux != u.ux || mtmp->muy != u.uy) {
+             pline("%s whispers at thin air.",
+@@ -655,7 +655,7 @@
+     if (!mtmp->msleeping && mtmp->mcanmove && nearby)
+         quest_talk(mtmp);
+     /* extra emotional attack for vile monsters */
+-    if (inrange && mtmp->data->msound == MS_CUSS && !mtmp->mpeaceful
++    if (inrange && NH_PM_SOUND(mtmp->data) == MS_CUSS && !mtmp->mpeaceful
+         && couldsee(mtmp->mx, mtmp->my) && !mtmp->minvis && !rn2(5))
+         cuss(mtmp);
+ 
 --- a/src/monst.c
 +++ b/src/monst.c
 @@ -101,7 +101,7 @@
@@ -688,6 +1370,17 @@
      /*
       * ants
       */
+--- a/src/objnam.c
++++ b/src/objnam.c
+@@ -3959,7 +3959,7 @@
+         case CORPSE:
+             if ((!(mons[mntmp].geno & G_UNIQ) || wizard)
+                 && !(mvitals[mntmp].mvflags & G_NOCORPSE)) {
+-                if (mons[mntmp].msound == MS_GUARDIAN)
++                if (NH_PM_SOUND(&mons[mntmp]) == MS_GUARDIAN)
+                     mntmp = genus(mntmp, 1);
+                 set_corpsenm(otmp, mntmp);
+             }
 --- a/src/options.c
 +++ b/src/options.c
 @@ -465,7 +465,7 @@
@@ -733,6 +1426,119 @@
  }
  
  int
+--- a/src/pager.c
++++ b/src/pager.c
+@@ -372,7 +372,7 @@
+                 } else {
+                     unsigned long mW = (context.warntype.obj
+                                         | context.warntype.polyd),
+-                                  m2 = mtmp->data->mflags2;
++                                  m2 = NH_PM_FLAGS2(mtmp->data);
+                     const char *whom = ((mW & M2_HUMAN & m2) ? "human"
+                                         : (mW & M2_ELF & m2) ? "elf"
+                                           : (mW & M2_ORC & m2) ? "orc"
+--- a/src/polyself.c
++++ b/src/polyself.c
+@@ -783,7 +783,7 @@
+             pline(use_thec, monsterc, "use your horn");
+         if (is_mind_flayer(youmonst.data))
+             pline(use_thec, monsterc, "emit a mental blast");
+-        if (youmonst.data->msound == MS_SHRIEK) /* worthless, actually */
++        if (NH_PM_SOUND(youmonst.data) == MS_SHRIEK) /* worthless, actually */
+             pline(use_thec, monsterc, "shriek");
+         if (is_vampire(youmonst.data))
+             pline(use_thec, monsterc, "change shape");
+--- a/src/pray.c
++++ b/src/pray.c
+@@ -1423,7 +1423,7 @@
+                     else
+                         dmon->mstrategy &= ~STRAT_APPEARMSG;
+                     You("have summoned %s!", dbuf);
+-                    if (sgn(u.ualign.type) == sgn(dmon->data->maligntyp))
++                    if (sgn(u.ualign.type) == sgn(NH_PM_ALIGN(dmon->data)))
+                         dmon->mpeaceful = TRUE;
+                     You("are terrified, and unable to move.");
+                     nomul(-3);
+@@ -1460,7 +1460,7 @@
+             if (u.ualign.type != A_CHAOTIC)
+                 value += 1;
+         } else if (is_unicorn(ptr)) {
+-            int unicalign = sgn(ptr->maligntyp);
++            int unicalign = sgn(NH_PM_ALIGN(ptr));
+ 
+             if (unicalign == altaralign) {
+                 /* When same as altar, always a very bad action.
+--- a/src/priest.c
++++ b/src/priest.c
+@@ -277,7 +277,7 @@
+ {
+     aligntyp algn = mon->ispriest ? EPRI(mon)->shralign
+                                   : mon->isminion ? EMIN(mon)->min_align
+-                                                  : mon->data->maligntyp;
++                                                  : NH_PM_ALIGN(mon->data);
+ 
+     if (algn == A_NONE)
+         return A_NONE; /* negative but differs from chaotic */
+--- a/src/quest.c
++++ b/src/quest.c
+@@ -407,7 +407,7 @@
+         chat_with_leader();
+         return;
+     }
+-    switch (mtmp->data->msound) {
++    switch (NH_PM_SOUND(mtmp->data)) {
+     case MS_NEMESIS:
+         chat_with_nemesis();
+         break;
+@@ -427,7 +427,7 @@
+         leader_speaks(mtmp);
+         return;
+     }
+-    switch (mtmp->data->msound) {
++    switch (NH_PM_SOUND(mtmp->data)) {
+     case MS_NEMESIS:
+         nemesis_speaks();
+         break;
+@@ -443,7 +443,7 @@
+ quest_stat_check(mtmp)
+ struct monst *mtmp;
+ {
+-    if (mtmp->data->msound == MS_NEMESIS)
++    if (NH_PM_SOUND(mtmp->data) == MS_NEMESIS)
+         Qstat(in_battle) = (mtmp->mcanmove && !mtmp->msleeping
+                             && monnear(mtmp, u.ux, u.uy));
+ }
+--- /dev/null
++++ b/src/quest_traits.c
+@@ -0,0 +1,28 @@
++/* Monster identity/indexing stays in flash. Quest-dependent reads/writes
++ * use three small writable copies while all monster data pointers stay canonical. */
++#include "hack.h"
++struct nh_quest_traits {
++    const struct permonst *base;
++    struct permonst data;
++};
++static struct nh_quest_traits traits[3];
++void nh_quest_traits_init(int leader, int guardian, int nemesis)
++{
++    int ids[3], i;
++    ids[0] = leader; ids[1] = guardian; ids[2] = nemesis;
++    for (i = 0; i < 3; ++i) {
++        memset(&traits[i], 0, sizeof traits[i]);
++        if (ids[i] == NON_PM) continue;
++        if (ids[i] < LOW_PM || ids[i] >= NUMMONS)
++            panic("invalid quest monster");
++        traits[i].base = &mons[ids[i]];
++        traits[i].data = *traits[i].base;
++    }
++}
++struct permonst *nh_pm_traits(const struct permonst *pm)
++{
++    int i;
++    for (i = 0; i < 3; ++i)
++        if (traits[i].base && traits[i].base == pm) return &traits[i].data;
++    return (struct permonst *) pm;
++}
 --- a/src/questpgr.c
 +++ b/src/questpgr.c
 @@ -136,8 +136,11 @@
@@ -784,6 +1590,23 @@
      return;
  }
  
+--- a/src/read.c
++++ b/src/read.c
+@@ -2141,11 +2141,11 @@
+                 } else if (!gameover) {
+                     /* suppress feedback about quest beings except
+                        for those applicable to our own role */
+-                    if ((mons[i].msound != MS_LEADER
++                    if ((NH_PM_SOUND(&mons[i]) != MS_LEADER
+                          || quest_info(MS_LEADER) == i)
+-                        && (mons[i].msound != MS_NEMESIS
++                        && (NH_PM_SOUND(&mons[i]) != MS_NEMESIS
+                             || quest_info(MS_NEMESIS) == i)
+-                        && (mons[i].msound != MS_GUARDIAN
++                        && (NH_PM_SOUND(&mons[i]) != MS_GUARDIAN
+                             || quest_info(MS_GUARDIAN) == i)
+                         /* non-leader/nemesis/guardian role-specific monster
+                            */
 --- a/src/restore.c
 +++ b/src/restore.c
 @@ -802,12 +802,12 @@
@@ -935,6 +1758,15 @@
  /* CHECK:  This may prevent restoration */
  #ifdef TOS
      mread(fd, (genericptr_t) &tlev, sizeof(tlev));
+@@ -1129,7 +1107,7 @@
+             if (!mtmp->isshk)
+                 mtmp->mpeaceful =
+                     (is_unicorn(mtmp->data)
+-                     && sgn(u.ualign.type) == sgn(mtmp->data->maligntyp))
++                     && sgn(u.ualign.type) == sgn(NH_PM_ALIGN(mtmp->data)))
+                         ? TRUE
+                         : peace_minded(mtmp->data);
+             set_malign(mtmp);
 @@ -1549,69 +1527,136 @@
  }
  
@@ -1119,6 +1951,86 @@
  
  STATIC_OVL void
  def_minit()
+--- a/src/role.c
++++ b/src/role.c
+@@ -2011,7 +2011,7 @@
+ role_init()
+ {
+     int alignmnt;
+-    struct permonst *pm;
++    const struct permonst *pm;
+ 
+     /* Strip the role letter out of the player name.
+      * This is included for backwards compatibility.
+@@ -2055,13 +2055,17 @@
+     urole = roles[flags.initrole];
+     urace = races[flags.initrace];
+ 
++#ifdef RP2040_MUTABLE_QUEST
++    nh_quest_traits_init(urole.ldrnum, urole.guardnum, urole.neminum);
++#endif
++
+     /* Fix up the quest leader */
+     if (urole.ldrnum != NON_PM) {
+         pm = &mons[urole.ldrnum];
+-        pm->msound = MS_LEADER;
+-        pm->mflags2 |= (M2_PEACEFUL);
+-        pm->mflags3 |= M3_CLOSE;
+-        pm->maligntyp = alignmnt * 3;
++        NH_PM_SOUND(pm) = MS_LEADER;
++        NH_PM_FLAGS2(pm) |= (M2_PEACEFUL);
++        NH_PM_FLAGS3(pm) |= M3_CLOSE;
++        NH_PM_ALIGN(pm) = alignmnt * 3;
+         /* if gender is random, we choose it now instead of waiting
+            until the leader monster is created */
+         quest_status.ldrgend =
+@@ -2073,18 +2077,18 @@
+     /* Fix up the quest guardians */
+     if (urole.guardnum != NON_PM) {
+         pm = &mons[urole.guardnum];
+-        pm->mflags2 |= (M2_PEACEFUL);
+-        pm->maligntyp = alignmnt * 3;
++        NH_PM_FLAGS2(pm) |= (M2_PEACEFUL);
++        NH_PM_ALIGN(pm) = alignmnt * 3;
+     }
+ 
+     /* Fix up the quest nemesis */
+     if (urole.neminum != NON_PM) {
+         pm = &mons[urole.neminum];
+-        pm->msound = MS_NEMESIS;
+-        pm->mflags2 &= ~(M2_PEACEFUL);
+-        pm->mflags2 |= (M2_NASTY | M2_STALK | M2_HOSTILE);
+-        pm->mflags3 &= ~(M3_CLOSE);
+-        pm->mflags3 |= M3_WANTSARTI | M3_WAITFORU;
++        NH_PM_SOUND(pm) = MS_NEMESIS;
++        NH_PM_FLAGS2(pm) &= ~(M2_PEACEFUL);
++        NH_PM_FLAGS2(pm) |= (M2_NASTY | M2_STALK | M2_HOSTILE);
++        NH_PM_FLAGS3(pm) &= ~(M3_CLOSE);
++        NH_PM_FLAGS3(pm) |= M3_WANTSARTI | M3_WAITFORU;
+         /* if gender is random, we choose it now instead of waiting
+            until the nemesis monster is created */
+         quest_status.nemgend = is_neuter(pm) ? 2 : is_female(pm) ? 1
+@@ -2114,7 +2118,7 @@
+  * needed--via instrinsic 'Infravision' which set_uasmon() manages.
+  */
+     /* Fix up infravision */
+-    if (mons[urace.malenum].mflags3 & M3_INFRAVISION) {
++    if (NH_PM_FLAGS3(&mons[urace.malenum]) & M3_INFRAVISION) {
+         /* although an infravision intrinsic is possible, infravision
+          * is purely a property of the physical race.  This means that we
+          * must put the infravision flag in the player's current race
+@@ -2124,9 +2128,9 @@
+          * but since infravision has no effect for NPCs anyway we can
+          * ignore this.
+          */
+-        mons[urole.malenum].mflags3 |= M3_INFRAVISION;
++        NH_PM_FLAGS3(&mons[urole.malenum]) |= M3_INFRAVISION;
+         if (urole.femalenum != NON_PM)
+-            mons[urole.femalenum].mflags3 |= M3_INFRAVISION;
++            NH_PM_FLAGS3(&mons[urole.femalenum]) |= M3_INFRAVISION;
+     }
+ #endif /*0*/
+ 
 --- a/src/save.c
 +++ b/src/save.c
 @@ -4,6 +4,7 @@
@@ -1561,6 +2473,171 @@
  
  STATIC_OVL void
  savelevchn(fd, mode)
+@@ -995,10 +1031,16 @@
+ struct obj *otmp;
+ {
+     int buflen, zerobuf = 0;
+-
++    struct obj disk = *otmp;
++
++    /* Restore reconstructs links; only contents/extra presence is needed.
++     * Canonical values compress better than allocator-specific addresses. */
++    disk.nobj = disk.nexthere = (struct obj *) 0;
++    disk.cobj = otmp->cobj ? (struct obj *) 1 : (struct obj *) 0;
++    disk.oextra = otmp->oextra ? (struct oextra *) 1 : (struct oextra *) 0;
+     buflen = (int) sizeof (struct obj);
+     bwrite(fd, (genericptr_t) &buflen, sizeof buflen);
+-    bwrite(fd, (genericptr_t) otmp, buflen);
++    bwrite(fd, (genericptr_t) &disk, buflen);
+     if (otmp->oextra) {
+         buflen = ONAME(otmp) ? (int) strlen(ONAME(otmp)) + 1 : 0;
+         bwrite(fd, (genericptr_t) &buflen, sizeof buflen);
+@@ -1082,12 +1124,19 @@
+ struct monst *mtmp;
+ {
+     int buflen;
++    struct monst disk;
+ 
+     mtmp->mtemplit = 0; /* normally clear; if set here then a panic save
+                          * is being written while bhit() was executing */
++    disk = *mtmp;
++    disk.nmon = (struct monst *) 0;
++    disk.data = (struct permonst *) 0; /* live monsters use saved mnum */
++    disk.minvent = mtmp->minvent ? (struct obj *) 1 : (struct obj *) 0;
++    disk.mw = mtmp->mw ? (struct obj *) 1 : (struct obj *) 0;
++    disk.mextra = mtmp->mextra ? (struct mextra *) 1 : (struct mextra *) 0;
+     buflen = (int) sizeof (struct monst);
+     bwrite(fd, (genericptr_t) &buflen, sizeof buflen);
+-    bwrite(fd, (genericptr_t) mtmp, buflen);
++    bwrite(fd, (genericptr_t) &disk, buflen);
+     if (mtmp->mextra) {
+         buflen = MNAME(mtmp) ? (int) strlen(MNAME(mtmp)) + 1 : 0;
+         bwrite(fd, (genericptr_t) &buflen, sizeof buflen);
+--- a/src/shk.c
++++ b/src/shk.c
+@@ -21,7 +21,7 @@
+ 
+ #define muteshk(shkp)                       \
+     ((shkp)->msleeping || !(shkp)->mcanmove \
+-     || (shkp)->data->msound <= MS_ANIMAL)
++     || NH_PM_SOUND((shkp)->data) <= MS_ANIMAL)
+ 
+ extern const struct shclass shtypes[]; /* defined in shknam.c */
+ 
+@@ -3968,9 +3968,9 @@
+     lang = 0;
+     if (shkp->msleeping || !shkp->mcanmove || is_silent(shkp->data))
+         ; /* lang stays 0 */
+-    else if (shkp->data->msound <= MS_ANIMAL)
++    else if (NH_PM_SOUND(shkp->data) <= MS_ANIMAL)
+         lang = 1;
+-    else if (shkp->data->msound >= MS_HUMANOID)
++    else if (NH_PM_SOUND(shkp->data) >= MS_HUMANOID)
+         lang = 2;
+ 
+     if (!inhishop(shkp)) {
+@@ -4137,7 +4137,7 @@
+     if (!cost_of_damage || !shkp)
+         return;
+ 
+-    animal = (shkp->data->msound <= MS_ANIMAL);
++    animal = (NH_PM_SOUND(shkp->data) <= MS_ANIMAL);
+     pursue = FALSE;
+     x = appear_here->place.x;
+     y = appear_here->place.y;
+--- a/src/sounds.c
++++ b/src/sounds.c
+@@ -254,7 +254,7 @@
+             const char *msg;
+             int trycount = 0, ax = EPRI(mtmp)->shrpos.x,
+                 ay = EPRI(mtmp)->shrpos.y;
+-            boolean speechless = (mtmp->data->msound <= MS_ANIMAL),
++            boolean speechless = (NH_PM_SOUND(mtmp->data) <= MS_ANIMAL),
+                     in_sight = canseemon(mtmp) || cansee(ax, ay);
+ 
+             do {
+@@ -312,7 +312,7 @@
+ {
+     const char *ret;
+ 
+-    switch (mtmp->data->msound) {
++    switch (NH_PM_SOUND(mtmp->data)) {
+     case MS_MEW:
+     case MS_HISS:
+         ret = "hiss";
+@@ -355,7 +355,7 @@
+ {
+     register const char *growl_verb = 0;
+ 
+-    if (mtmp->msleeping || !mtmp->mcanmove || !mtmp->data->msound)
++    if (mtmp->msleeping || !mtmp->mcanmove || !NH_PM_SOUND(mtmp->data))
+         return;
+ 
+     /* presumably nearness and soundok checks have already been made */
+@@ -378,14 +378,14 @@
+ {
+     register const char *yelp_verb = 0;
+ 
+-    if (mtmp->msleeping || !mtmp->mcanmove || !mtmp->data->msound)
++    if (mtmp->msleeping || !mtmp->mcanmove || !NH_PM_SOUND(mtmp->data))
+         return;
+ 
+     /* presumably nearness and soundok checks have already been made */
+     if (Hallucination)
+         yelp_verb = h_sounds[rn2(SIZE(h_sounds))];
+     else
+-        switch (mtmp->data->msound) {
++        switch (NH_PM_SOUND(mtmp->data)) {
+         case MS_MEW:
+             yelp_verb = (!Deaf) ? "yowl" : "arch";
+             break;
+@@ -421,14 +421,14 @@
+ {
+     register const char *whimper_verb = 0;
+ 
+-    if (mtmp->msleeping || !mtmp->mcanmove || !mtmp->data->msound)
++    if (mtmp->msleeping || !mtmp->mcanmove || !NH_PM_SOUND(mtmp->data))
+         return;
+ 
+     /* presumably nearness and soundok checks have already been made */
+     if (Hallucination)
+         whimper_verb = h_sounds[rn2(SIZE(h_sounds))];
+     else
+-        switch (mtmp->data->msound) {
++        switch (NH_PM_SOUND(mtmp->data)) {
+         case MS_MEW:
+         case MS_GROWL:
+             whimper_verb = "whimper";
+@@ -458,9 +458,9 @@
+         return;
+ 
+     /* presumably nearness and soundok checks have already been made */
+-    if (!is_silent(mtmp->data) && mtmp->data->msound <= MS_ANIMAL)
++    if (!is_silent(mtmp->data) && NH_PM_SOUND(mtmp->data) <= MS_ANIMAL)
+         (void) domonnoise(mtmp);
+-    else if (mtmp->data->msound >= MS_HUMANOID) {
++    else if (NH_PM_SOUND(mtmp->data) >= MS_HUMANOID) {
+         if (!canspotmon(mtmp))
+             map_invisible(mtmp->mx, mtmp->my);
+         verbalize("I'm hungry.");
+@@ -496,7 +496,7 @@
+         *verbl_msg = 0,                 /* verbalize() */
+         *verbl_msg_mcan = 0;            /* verbalize() if cancelled */
+     struct permonst *ptr = mtmp->data;
+-    int msound = ptr->msound, gnomeplan = 0;
++    int msound = NH_PM_SOUND(ptr), gnomeplan = 0;
+ 
+     /* presumably nearness and sleep checks have already been made */
+     if (Deaf)
+@@ -509,7 +509,7 @@
+         msound = MS_LEADER;
+     /* make sure it's your role's quest guardian; adjust if not */
+     else if (msound == MS_GUARDIAN && ptr != &mons[urole.guardnum])
+-        msound = mons[genus(monsndx(ptr), 1)].msound;
++        msound = NH_PM_SOUND(&mons[genus(monsndx(ptr), 1)]);
+     /* some normally non-speaking types can/will speak if hero is similar */
+     else if (msound == MS_ORC         /* note: MS_ORC is same as MS_GRUNT */
+              && ((same_race(ptr, youmonst.data)          /* current form, */
 --- a/src/sp_lev.c
 +++ b/src/sp_lev.c
 @@ -10,6 +10,7 @@
@@ -1808,6 +2885,68 @@
      Free(lvl);
  
  give_up:
+--- a/src/spell.c
++++ b/src/spell.c
+@@ -299,7 +299,7 @@
+             if ((is_undead(mtmp->data) || is_vampshifter(mtmp))
+                 && cansee(mtmp->mx, mtmp->my)) {
+                 mtmp->mpeaceful = TRUE;
+-                if (sgn(mtmp->data->maligntyp) == sgn(u.ualign.type)
++                if (sgn(NH_PM_ALIGN(mtmp->data)) == sgn(u.ualign.type)
+                     && distu(mtmp->mx, mtmp->my) < 4)
+                     if (mtmp->mtame) {
+                         if (mtmp->mtame < 20)
+--- a/src/trap.c
++++ b/src/trap.c
+@@ -379,7 +379,7 @@
+         do { /* avoid ultimately hostile co-aligned unicorn */
+             mptr = &mons[rndmonnum()];
+         } while (--trycount > 0 && is_unicorn(mptr)
+-                 && sgn(u.ualign.type) == sgn(mptr->maligntyp));
++                 && sgn(u.ualign.type) == sgn(NH_PM_ALIGN(mptr)));
+         statue = mkcorpstat(STATUE, (struct monst *) 0, mptr, x, y,
+                             CORPSTAT_NONE);
+         mtmp = makemon(&mons[statue->corpsenm], 0, 0, MM_NOCOUNTBIRTH);
+@@ -611,7 +611,7 @@
+            mptr reflects the original form for use by newcham()) */
+         if ((mnum == PM_DOPPELGANGER && mptr != &mons[PM_DOPPELGANGER])
+             /* block quest guards from other roles */
+-            || (mptr->msound == MS_GUARDIAN
++            || (NH_PM_SOUND(mptr) == MS_GUARDIAN
+                 && quest_info(MS_GUARDIAN) != mnum)) {
+             mon = makemon(&mons[PM_DOPPELGANGER], x, y,
+                           NO_MINVENT | MM_NOCOUNTBIRTH | MM_ADJACENTOK);
+--- a/src/wizard.c
++++ b/src/wizard.c
+@@ -138,7 +138,7 @@
+     ((unsigned long) (w) | ((unsigned long) (x) << 16) \
+      | ((unsigned long) (y) << 8) | (unsigned long) (typ))
+ 
+-#define M_Wants(mask) (mtmp->data->mflags3 & (mask))
++#define M_Wants(mask) (NH_PM_FLAGS3(mtmp->data) & (mask))
+ 
+ STATIC_OVL short
+ which_arti(mask)
+@@ -543,7 +543,7 @@
+ {
+     register struct monst *mtmp;
+     register int i, j;
+-    int castalign = (summoner ? sgn(summoner->data->maligntyp) : 0);
++    int castalign = (summoner ? sgn(NH_PM_ALIGN(summoner->data)) : 0);
+     coord bypos;
+     int count, census, tmp, makeindex, s_cls, m_cls;
+ 
+@@ -612,8 +612,8 @@
+                     /* delay first use of spell or breath attack */
+                     mtmp->mspec_used = rnd(4);
+                     if (++count >= MAXNASTIES
+-                        || mtmp->data->maligntyp == 0
+-                        || sgn(mtmp->data->maligntyp) == castalign)
++                        || NH_PM_ALIGN(mtmp->data) == 0
++                        || sgn(NH_PM_ALIGN(mtmp->data)) == castalign)
+                         break;
+                 }
+             }
 --- a/sys/unix/unixmain.c
 +++ b/sys/unix/unixmain.c
 @@ -12,6 +12,7 @@

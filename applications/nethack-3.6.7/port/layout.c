@@ -135,3 +135,8 @@ char offset_room_chance[offsetof(room, chance) + 1];
 char offset_room_rlit[offsetof(room, rlit) + 1];
 char offset_room_filled[offsetof(room, filled) + 1];
 char offset_room_joined[offsetof(room, joined) + 1];
+
+/* Packed map squares are also shared by host/target source builds. */
+char layout_map_square[sizeof(struct rm)];
+char offset_map_square_typ[offsetof(struct rm, typ) + 1];
+char offset_map_square_seenv[offsetof(struct rm, seenv) + 1];

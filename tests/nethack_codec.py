@@ -142,7 +142,7 @@ int main(void) {
         int fd = mkstemp(path), wfd = dup(fd), reference_ok;
         long clen;
         TampDecompressor dec;
-        unsigned char window[1024];
+        unsigned char window[1U << NHTAMP_WIN_BITS];
         size_t written = 0, consumed = 0;
         tamp_res result;
         unlink(path);
@@ -169,7 +169,7 @@ int main(void) {
         if (!compressed || !reference || !decoded || !raw || !got) exit(2);
         lseek(fd, 15, SEEK_SET);
         if (read(fd, compressed, clen) != clen) exit(2);
-        tamp_decompressor_init(&dec, NULL, window, 10);
+        tamp_decompressor_init(&dec, NULL, window, NHTAMP_WIN_BITS);
         result = tamp_decompressor_decompress(&dec, reference, 2 * n + 8, &written,
                                              compressed, clen, &consumed);
         reference_ok = rle_decode(reference, written, decoded, n) == (long) n

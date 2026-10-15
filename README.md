@@ -11,6 +11,8 @@ programs can retain their original C sources.
 
 ## Build an application
 
+You can find some examples in the `applications` subdirectory.
+
 On Debian, install the ARM compiler, newlib, native build tools and FAT utilities:
 
 ```sh
@@ -21,17 +23,9 @@ sudo apt install git ca-certificates build-essential cmake ninja-build python3 \
   dosfstools mtools libusb-1.0-0-dev pkg-config
 ```
 
-For NetHack's 32-bit data generators, install these additional packages on
-**x86-64 Debian**:
-
-```sh
-sudo apt install gcc-multilib libc6-dev-i386 bison flex patch
-```
-
 Optional tools: `screen` for the USB terminal and `qemu-user` for the ARM/newlib
-soft-reboot regression test. On other host architectures, follow the
-[NetHack recipe](applications/nethack-3.1.3/README.md) for a 32-bit compiler and
-runner instead of `gcc-multilib`.
+soft-reboot regression test. Each [application recipe](applications/README.md)
+lists its additional dependencies and build options.
 
 Install Pico SDK 2.3.1 in a directory of your choice and initialize TinyUSB:
 
@@ -47,22 +41,9 @@ the first build needs network access. Then run from this repository:
 ```sh
 # Minimal included terminal example
 sh applications/hello/build.sh
-
-# NetHack 3.1.3; downloads the pinned upstream source when --source is omitted
-python3 applications/nethack-3.1.3/build.py
-# Or use an existing upstream Git checkout
-python3 applications/nethack-3.1.3/build.py --source /path/to/nethack
-
-# NetHack 3.6.7; compressed data and levels
-applications/nethack-3.6.7/build.sh
 ```
 
-NetHack also needs a 32-bit host compiler, Bison and Flex. See the
-[NetHack recipe](applications/nethack-3.1.3/README.md) for dependencies, source
-revision, memory layout and optional soft reboot.
-
-For NetHack 3.6.7, see its [build and configuration guide](applications/nethack-3.6.7/README.md),
-including QEMU generator support on Apple Silicon.
+See the [application recipes](applications/README.md) for other programs.
 
 Build outputs are kept under `build/`. Each application produces a firmware UF2
 and a separate FAT data-volume UF2. The build checks flash and SRAM bounds and
@@ -113,8 +94,8 @@ porting an application.
 
 [INTERNALS.md](INTERNALS.md) explains startup, console routing, compatibility
 headers, filesystem, memory layout, soft reboot and regression checks.
-Application builds and image checks have been exercised in the cloud; physical
-USB behavior, flash writes and long-game heap/stack peaks need board testing.
+Each application records its build and hardware validation status in its own
+documentation.
 
 ## Licence
 

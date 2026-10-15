@@ -4,6 +4,7 @@ import unittest
 import os
 import subprocess
 import tempfile
+import struct
 
 TOOLS = pathlib.Path(__file__).resolve().parents[1] / 'tools'
 spec = importlib.util.spec_from_file_location('check_memory', TOOLS / 'check-memory.py')
@@ -77,6 +78,39 @@ class VolumeChecks(unittest.TestCase):
             self.assertEqual(output.read_bytes(), src.read_bytes())
             subprocess.run(['mdir', '-i', str(work / 'fixture-volume.img'), '::nested/scores'],
                            check=True, stdout=subprocess.DEVNULL)
+
+    def test_exact_flash_geometry_and_custom_root(self):
+        with tempfile.TemporaryDirectory() as work:
+            work = pathlib.Path(work)
+            manifest = work / 'exact.txt'
+            manifest.write_text('label EXACT\noffset 0x17B000\nsize 544768\n'
+                                'root_entries 256\nflash no\n')
+            command = ['sh', str(TOOLS / 'mkvolume.sh'), '--manifest', str(manifest),
+                       '--out', str(work)]
+            subprocess.run(command, check=True, stdout=subprocess.DEVNULL)
+            image = work / 'exact-volume.img'; boot = image.read_bytes()[:512]
+            sector = struct.unpack_from('<H', boot, 11)[0]
+            total = struct.unpack_from('<H', boot, 19)[0]
+            root = struct.unpack_from('<H', boot, 17)[0]
+            self.assertEqual(total * sector, image.stat().st_size)
+            self.assertEqual(root, 256)
+            reserved = struct.unpack_from('<H', boot, 14)[0]
+            fat_sectors = struct.unpack_from('<H', boot, 22)[0]
+            data_sectors = total - reserved - boot[16] * fat_sectors - root * 32 // sector
+            # Exercise the final data clusters through mtools, without bypassing
+            # its geometry checks. The previous geometry failed near fullness.
+            payload = bytes(range(256)) * ((data_sectors - 1) * sector // 256)
+            source = work / 'payload'; source.write_bytes(payload)
+            subprocess.run(['mcopy', '-i', str(image), str(source), '::last'], check=True)
+            output = work / 'readback'
+            subprocess.run(['mcopy', '-i', str(image), '::last', str(output)], check=True)
+            self.assertEqual(output.read_bytes(), payload)
+            subprocess.run(['fsck.fat', '-n', str(image)], check=True, stdout=subprocess.DEVNULL)
+            for invalid in ('0', '17', 'garbage'):
+                manifest.write_text('flash no\nroot_entries ' + invalid + '\n')
+                result = subprocess.run(command, capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('root_entries', result.stderr)
 
 class ProgramStateChecks(unittest.TestCase):
     def test_program_only_tagging_and_rejected_sections(self):

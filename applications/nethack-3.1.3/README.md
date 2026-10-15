@@ -9,17 +9,17 @@ upstream `dat/license` with distributions; it is included in the FAT image.
 
 ## Build
 
-Install the [common prerequisites](../README.md) plus the 32-bit host compiler
+Install the [common prerequisites](../../README.md#build-an-application) plus the 32-bit host compiler
 and parser generators. On an x86-64 Debian/Ubuntu host:
 
 ```sh
 sudo apt install gcc-multilib libc6-dev-i386 bison flex patch
-git clone https://github.com/Vanilla-NetHack/NetHack.git nethack
-git -C nethack checkout df89f069705251b66c74322ed01b3d30d670979e
-python3 applications/nethack-3.1.3/build.py --source ./nethack
+python3 applications/nethack-3.1.3/build.py
+# Or reuse an existing upstream Git checkout:
+python3 applications/nethack-3.1.3/build.py --source /path/to/nethack
 ```
 
-Run the last command from the console repository root with `PICO_SDK_PATH` set.
+Run the build commands from the console repository root with `PICO_SDK_PATH` set.
 Without `--source`, the script clones upstream into its build directory. It always
 archives the pinned commit, regardless of the checkout's current branch or edits.
 `--build-dir /absolute/path` selects a different private output directory;

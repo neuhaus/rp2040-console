@@ -44,7 +44,22 @@ def deflate(data, wbits):
     return co.compress(data) + co.flush()
 
 
-def pack_nhdata(dat, library):
+def build_data_compressors(work, port, run):
+    """Build native host tools; their output needs only the existing inflater."""
+    cc = shlex.split(os.environ.get('BUILD_CC', 'cc'))
+    vendor = port / 'host' / 'zopfli'
+    sources = sorted(vendor.glob('*.c'))
+    tools = {}
+    for bits in range(NH_WINDOW_MIN, NH_WINDOW_MAX + 1):
+        exe = work / ('deflate-opt-%d' % bits)
+        run(cc + ['-O2', '-DZOPFLI_WINDOW_SIZE=' + str(1 << bits),
+                  '-I' + str(vendor), port / 'host' / 'deflate_opt.c']
+            + sources + ['-lm', '-o', exe])
+        tools[bits] = exe
+    return tools
+
+
+def pack_nhdata(dat, library, tools):
     """Write dat/nhdata: raw-deflate streams for `library`, in one archive.
 
     The format matches port/nhdlb.c: a 12-byte header, a 32-byte directory
@@ -62,9 +77,13 @@ def pack_nhdata(dat, library):
         data = path.read_bytes()
         raw[name] = data
         # Smallest output wins; ties go to the smaller window (less RAM).
-        comp, wbits = min(((deflate(data, w), w)
-                           for w in range(NH_WINDOW_MIN, NH_WINDOW_MAX + 1)),
-                          key=lambda cw: (len(cw[0]), cw[1]))
+        candidates = []
+        for w in range(NH_WINDOW_MIN, NH_WINDOW_MAX + 1):
+            candidates.append((deflate(data, w), w))
+            optimized = subprocess.run([str(tools[w])], input=data,
+                                       capture_output=True, check=True).stdout
+            candidates.append((optimized, w))
+        comp, wbits = min(candidates, key=lambda cw: (len(cw[0]), cw[1]))
         nm = name.encode()[: NH_NAME_MAX - 1]
         directory += nm + b'\0' * (NH_NAME_MAX - len(nm))
         directory += struct.pack('<IIII', data_start + len(blob), len(comp),
@@ -90,9 +109,13 @@ def main():
                         help='Existing NetHack Git checkout (left unchanged)')
     parser.add_argument('--build-dir', type=Path,
                         default=CONSOLE / 'build/nethack-3.6.7')
+    parser.add_argument('--no-lto', action='store_true',
+                        help='Disable selective LTO; use the smaller 520 KiB volume')
     parser.add_argument('--soft-reboot', action='store_true')
     parser.add_argument('--sram-diagnostics', action='store_true',
                         help='Deterministic wizard probes; not for ordinary play')
+    parser.add_argument('--sram-max-dungeon', action='store_true',
+                        help='Largest valid branch lengths; requires --sram-diagnostics')
     parser.add_argument('--nethack-options', default='', metavar='OPTS',
                         help='NETHACKOPTIONS for this image, e.g. '
                              '"symset:DECgraphics,number_pad:-1"')
@@ -101,6 +124,10 @@ def main():
                              'line the recipe ships)')
     parser.add_argument('--jobs', type=int, default=4)
     args = parser.parse_args()
+    if args.jobs < 1:
+        parser.error('--jobs must be positive')
+    if args.sram_max_dungeon and not args.sram_diagnostics:
+        parser.error('--sram-max-dungeon requires --sram-diagnostics')
     if args.sram_diagnostics:
         args.nethack_options = "name:wizard,role:Wizard,race:human,gender:male,align:neutral,playmode:debug,!autopickup" + ("," + args.nethack_options if args.nethack_options else "")
     banner = (args.banner if args.banner is not None
@@ -148,7 +175,7 @@ def main():
     # shutil.copy (not copy2) so a rebuilt tree notices the change: copy2
     # preserves mtimes and ninja would not.
     port = HERE / 'port'
-    for name in ('compat.h', 'platform.c', 'layout.c', 'memlog.c',
+    for name in ('compat.h', 'layout.c', 'memlog.c',
                  'CMakeLists.txt'):
         shutil.copy(port / name, src / name)
     shutil.copy(port / 'nhdlb.c', src / 'src' / 'dlb.c')
@@ -166,7 +193,7 @@ def main():
         spec = importlib.util.spec_from_file_location('sram_diagnostics', port / 'sram_diagnostics.py')
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        module.prepare(src, port)
+        module.prepare(src, port, maximum=args.sram_max_dungeon)
 
     # Compiler and runner are argument lists, never shell-evaluated commands.
     cc = shlex.split(os.environ.get('HOST_CC', 'gcc'))
@@ -224,7 +251,7 @@ def main():
     # Collect every file the data librarian serves into one deflate archive.
     dat = src / 'dat'
     library = list(DATA_LIBRARY) + [p.name for p in sorted(dat.glob('*.lev'))]
-    pack_nhdata(dat, library)
+    pack_nhdata(dat, library, build_data_compressors(work, port, run))
 
     # Decode the archive with the same inflater the board runs (uzlib), not
     # just the host's zlib, so a decoder mismatch is caught here.  uzlib's
@@ -253,6 +280,8 @@ def main():
          '-DRP2040_CONSOLE_DIR=' + str(CONSOLE),
          '-DNETHACK_OPTIONS=' + args.nethack_options,
          '-DNETHACK_BANNER=' + banner,
+         '-DNETHACK_LTO=' + ('OFF' if args.no_lto else 'ON'),
+         '-DNETHACK_LTO_JOBS=' + str(args.jobs),
          '-DNETHACK_SOFT_REBOOT=' + ('ON' if args.soft_reboot else 'OFF')])
     run(['cmake', '--build', firmware, '--parallel', args.jobs])
     run(['cmake', '--build', firmware, '--target', 'volume'])

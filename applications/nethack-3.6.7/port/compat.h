@@ -43,14 +43,6 @@ void nh_mem_report(void);
 #endif
 
 /*
- * NetHack's tty setup asks fpathconf(0, _PC_VDISABLE) for the "disable"
- * control character.  POSIX defines the request; some newlib builds do not.
- */
-#ifndef _PC_VDISABLE
-#define _PC_VDISABLE 0
-#endif
-
-/*
  * Feature toggles that must agree between the program and the host tools
  * that generate headers it compiles against.
  *

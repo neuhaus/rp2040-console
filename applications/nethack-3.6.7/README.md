@@ -6,7 +6,7 @@ needed.
 ## Build
 
 Install the [console prerequisites](../../README.md#build-an-application), plus
-Bash, Bison, Flex and patch. Set `PICO_SDK_PATH` to your Pico SDK 2.3.1 directory
+Bash, Bison, Flex, patch and a native C compiler (`cc`). Set `PICO_SDK_PATH` to your Pico SDK 2.3.1 directory
 and put the ARM toolchain, dosfstools and mtools on `PATH`.
 
 Run from the `rp2040-console` repository root. On Apple Silicon, install QEMU
@@ -16,15 +16,22 @@ with `qemu-system-arm` and run:
 applications/nethack-3.6.7/build.sh --qemu-generators --jobs 4
 ```
 
-On x86-64 Linux, install `gcc-multilib` and `libc6-dev-i386`, then run:
+On x86-64 Debian/Ubuntu, install the 32-bit host compiler and parser generators,
+then build:
 
 ```sh
+sudo apt install gcc-multilib libc6-dev-i386 bison flex patch
 applications/nethack-3.6.7/build.sh --jobs 4
 ```
 
 The build downloads NetHack 3.6.7. Add `--source /path/to/NetHack` to use an
 existing Git checkout, which is left unchanged. Add `--build-dir /path/to/output`
 to change the output directory. `build.sh --help` lists the available options.
+
+Selective LTO is enabled to leave more flash for game state. Use `--jobs 2`
+to limit parallel compilation. `--no-lto` is intended for quicker test builds
+and uses a smaller data volume. Changing this setting changes the flash layout;
+flash both images and start a new game.
 
 ## Customize
 

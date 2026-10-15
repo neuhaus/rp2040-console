@@ -113,10 +113,14 @@ int main(void){
 }
 '''
 run(code,'pool-session',[console/'src/nethack_pool.c',console/'src/soft_reboot.c'])
-assert '#define EDITLEVEL 129' in (src/'include/patchlevel.h').read_text()
-assert '#define VERSION_COMPATIBILITY 0x03060781L' in (src/'include/patchlevel.h').read_text()
+assert '#define EDITLEVEL 130' in (src/'include/patchlevel.h').read_text()
+assert '#define VERSION_COMPATIBILITY 0x03060782L' in (src/'include/patchlevel.h').read_text()
 print('PASS distinct compact-save incarnation')
 
 subprocess.run([sys.executable, str(HERE/'test-levels.py'), '--build-dir', str(work)], check=True)
 
 subprocess.run([sys.executable,str(HERE/"test-checkpoint.py"),"--build-dir",str(work)],check=True)
+
+subprocess.run([sys.executable,str(HERE/"test-records.py"),"--build-dir",str(work)],check=True)
+
+subprocess.run([sys.executable,str(HERE/"test-quest-traits.py"),"--build-dir",str(work)],check=True)

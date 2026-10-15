@@ -8,8 +8,9 @@ args = parser.parse_args()
 b = Path(args.build_dir)
 
 file_symbols = subprocess.check_output(
-    ['arm-none-eabi-nm', '-u',
+    ['arm-none-eabi-gcc-nm', '-u',
      str(b / 'CMakeFiles/nethack.dir/src/files.c.o')], text=True)
+assert file_symbols.strip(), 'Empty lock-code symbol probe'
 assert not any(line.split()[-1] == 'link'
                for line in file_symbols.splitlines() if line.split()), \
     'NetHack lock code must use NO_FILE_LINKS on FAT'

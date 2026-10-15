@@ -171,6 +171,7 @@ set(RP2040_CONSOLE_ROWS "24" CACHE STRING
 #   DATA_DIRS     directories to create on the volume
 #   VOLUME_NAME   FAT volume label
 #   FS_OFFSET     flash offset of the volume      (default 0x180000)
+#   FS_ROOT_ENTRIES  optional FAT12/16 root directory slots (default 512)
 #   FS_SIZE       volume size in bytes            (default 524288)
 #   HEAP_END      top of the heap; see below      (default: SDK's)
 #   COLS ROWS     terminal size to report         (default 80 24)
@@ -188,6 +189,7 @@ function(rp2040_console_game)
             VOLUME_NAME
             FS_OFFSET
             FS_SIZE
+            FS_ROOT_ENTRIES
             HEAP_END
             FLASH_SIZE
             STACK_RESERVE
@@ -677,6 +679,9 @@ function(rp2040_console_game)
     string(APPEND _manifest "offset ${CG_FS_OFFSET}\n")
     string(APPEND _manifest "size ${CG_FS_SIZE}\n"
                         "flash_size ${CG_FLASH_SIZE}\n")
+    if(NOT "${CG_FS_ROOT_ENTRIES}" STREQUAL "")
+        string(APPEND _manifest "root_entries ${CG_FS_ROOT_ENTRIES}\n")
+    endif()
     foreach(f IN LISTS CG_DATA_FILES)
         string(APPEND _manifest "file\t${_root}/${f}\t${f}\n")
     endforeach()

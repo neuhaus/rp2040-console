@@ -9,15 +9,22 @@ The build pins NetHack revision
 
 The changes close quest decoders between messages, load quest indexes earlier
 on restore, bound deflate dictionaries to 4 KiB, pack overview flags, use
-16-bit internal display glyphs and byte-sized room references, allocate immutable
+16-bit display and remembered-map glyphs, six-byte map squares and byte-sized room references, allocate immutable
 special-level operands in arenas, pool 64-byte allocations, and reserve 20 KiB
-for the stack. DECgraphics remains available. LTO is not enabled.
+for the stack. DECgraphics remains available. Selective LTO covers NetHack sources; SDK,
+platform wrappers and third-party codecs use ordinary objects. `--jobs` bounds
+compilation workers; the final LTO link uses one partition and GCC
+interprocedural pointer analysis (`-fipa-pta`) to reduce firmware size.
+`--no-lto` disables these options.
 
 Saves use packed overview flags and 13-byte room records; pointers and room
 padding are omitted. This format deliberately rejects previous saves and bones
-(version incarnation `0x03060781`). Start a new game when switching to this
-port. Compressed savings depend on the level; the old zero-filled pointer
-fields already compressed well.
+(version incarnation `0x03060782`). Start a new game when switching to this
+port. Object and monster link pointers are serialized as zero or presence markers,
+then reconstructed by the existing restore code. Live records are unchanged.
+Map squares use the existing run-length encoder before zero-run encoding and
+Tamp, with separate 1 KiB encoder and decoder windows. Older saves and bones
+are incompatible with the six-byte map layout.
 
 ## One saved game
 
@@ -31,7 +38,10 @@ Saving writes `0game.tmp` first and publishes the completed companion by rename.
 An uncommitted temporary file is not offered for restore. Startup clears orphaned
 level files when no committed checkpoint exists. After resuming, the checkpoint
 companion is deleted; save again to create a new one. This also applies in
-wizard mode. The level files continue to back the running game. There is one
+wizard mode. Inactive level files continue to back the running game. After loading a cached
+level, its stale disk copy is removed; the active level lives in SRAM and is
+written when leaving or saving. The optional memory log retains only its latest
+summary, bounding its flash use. There is one
 saved game, shared by all character names. This implementation choice simplifies
 checkpoint ownership.
 
@@ -52,9 +62,11 @@ source tree; customize the application files rather than generated outputs.
 
 `--soft-reboot` selects `soft/` instead of `hardware/`. Pool state is
 platform-owned and slots are released by the session tracker before program
-globals reset. Soft reboot retains a tracking allocation for each live
+globals reset. Soft reboot disables LTO so the console can tag data/BSS object sections for
+reset, and uses the 520 KiB volume. It retains a tracking allocation for each live
 allocation, so it has higher SRAM costs than the measured hardware-reboot build.
-Its physical USB lifecycle still needs validation.
+Its physical USB lifecycle still needs validation. Full-dungeon storage
+measurements apply to the default hardware-reboot build.
 
 `--sram-diagnostics` enables the deterministic wizard workload and serial
 measurements; leave it off for ordinary play. For a separately installed
@@ -76,11 +88,16 @@ For repeatable Pico measurements, build a separate image with
 `--sram-diagnostics`. It enables a fixed-seed wizard character, serial allocation
 and stack/guard readings, `#sramtrial` (Ludios), `#sramstack` (travel probes), and
 `#srampack` (150 carried test objects), `#sramtour` (depths 1–48, then Ludios),
-and `#stats`. This option changes gameplay setup and is intended for testing only.
+`#sramworld` (all actual non-endgame branch levels), `#sramrevisit`
+(revisit every non-endgame level, map terrain/traps and remember floor objects), `#sramnextplane`
+(one endgame plane), `#sramplanes` (all five), `#sramaltar` (move to the
+co-aligned Astral altar), and `#stats`. Add `--sram-max-dungeon` to choose the
+maximum valid length for each randomly sized branch. This option changes gameplay setup and is intended for testing only.
 
-The measurements establish tested headroom, not safety for every possible
-monster population or a completed ascension. See `RESULTS.md` for the
-build's validation and limits. NetHack and the console retain their respective
+The maximum-branch wizard workload completed all 81 playable levels, plane
+checkpoints and the normal Amulet offering. This establishes tested headroom,
+not safety for every possible monster population or combat path. See
+`RESULTS.md` for the build's validation and limits. NetHack and the console retain their respective
 licenses; retain NetHack's license and port patches when distributing modified code.
 
 ## Cached-level ownership
@@ -94,8 +111,9 @@ exercise repeated cross-process resumes and reject wrong owners and ledgers.
 
 ## Remaining validation limits
 
-The wizard workloads measure storage and allocation behavior. They do not prove
-that a complete ascension, every branch or arbitrary monster populations fit.
+The wizard workloads measure storage and allocation behavior with forced
+travel and mapped levels. Natural combat paths, all roles/seeds and arbitrary
+monster or object populations are outside this validation.
 The stack guard detects damage only when sampled. Physical soft reboot remains
 unverified. See [RESULTS.md](RESULTS.md) for measured workload sizes and headroom.
 
@@ -110,16 +128,19 @@ Manifest-only definitions reach the target alone and can break generated table
 indexes. The build compares host and target layouts and archive contents.
 
 Read-only data is archived into `nhdata` with raw-deflate entries and per-entry
-dictionaries of 1–4 KiB. The symbols file supports DECgraphics. The inherited
-port omits the optional `tribute` text file; this is not an all-content ascension
-validation. Writable levels and checkpoints use zero-run encoding followed by
+dictionaries of 1–4 KiB. The symbols file supports DECgraphics. The optional `tribute` text file is omitted, as agreed for this port. Writable maps use NetHack run-length encoding; levels and checkpoints use
+zero-run encoding followed by
 Tamp compression. Vendored Tamp 2.5.0 is used under MIT; uzlib uses the zlib
 license. See [Tamp provenance](port/tamp/UPSTREAM.md) for the pinned commit
 and upstream license selection.
 
-Firmware ends below flash offset `0x17E000`; the 520 KiB FAT12 data volume fills
-the remainder of the 2 MiB chip. Raising the volume start reduces space for
-levels. `HEAP_END=0x2003d000` reserves 20 KiB above the heap for the stack.
+With LTO, firmware ends below flash offset `0x17A000`; the 536 KiB FAT12 data volume fills
+the remainder of the 2 MiB chip. Without LTO the boundary is `0x17E000` and
+the volume is 520 KiB. Changing layouts requires flashing the matching data
+image. The application reserves 256 root directory entries. Small FAT12 images
+use one-sector track geometry so every declared sector remains usable; all
+level and bones contents remain supported. Raising the volume start reduces
+space for levels. `HEAP_END=0x2003d000` reserves 20 KiB above the heap for the stack.
 Measured headroom and remaining limits are in [RESULTS.md](RESULTS.md).
 
 
@@ -128,3 +149,24 @@ The save/restore codec adapters have a separate native sanitizer regression:
 ```sh
 python3 tests/nethack_codec.py --source /path/to/NetHack --sanitize
 ```
+
+## Mutable quest traits
+
+The immutable monster table stays in flash. Three RAM copies hold the quest
+leader, guardian and nemesis traits initialized by `role_init`; sound, alignment
+and mutable flag accesses resolve through a common accessor. Monster pointers
+retain their original table identities. This costs 180 bytes of static SRAM and
+restores the original role-specific behavior without writing flash. Tests cover
+all 13 roles and three alignments, repeated initialization and table immutability.
+
+## Build-time archive optimization
+
+A native Zopfli host tool tries three optimization iterations at 1, 2 and 4 KiB
+windows alongside zlib. Each archive entry takes the smallest result, preferring
+a smaller dictionary on ties. This changes only the encoder on the build host;
+the Pico continues to use the same raw-deflate inflater and 4 KiB maximum
+dictionary. Every entry is verified with zlib and the target inflater. Set
+`BUILD_CC` to select the native host compiler independently of the 32-bit data
+generator compiler. The vendored host-only tool is Apache-2.0; its source,
+license and pinned revision are in `port/host/zopfli/`. It is never linked into
+NetHack or the firmware.

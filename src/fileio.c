@@ -16,6 +16,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <string.h>
@@ -24,6 +25,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <termios.h>
 
 #include <pico/stdlib.h>
 
@@ -798,3 +800,59 @@ int chdir(const char *path)
 }
 
 int _chdir(const char *path) { return chdir(path); }
+
+/* FatFs returns a drive-qualified path (for example "0:/save"). Keep the
+ * prefix: chdir/open accept it, and it identifies the current volume. Like
+ * the other POSIX wrappers, this uses a caller-owned buffer, without an
+ * allocating getcwd(NULL, ...) extension. */
+char *getcwd(char *buf, size_t size)
+{
+    FRESULT fr;
+
+    if (buf == NULL) {
+        errno = EFAULT;
+        return NULL;
+    }
+    if (size == 0) {
+        errno = EINVAL;
+        return NULL;
+    }
+    if (!storage_available) {
+        errno = ENOENT;
+        return NULL;
+    }
+    /* f_getcwd writes the terminator after stacking the path; even the
+     * root needs a slash and NUL (plus a drive prefix with multiple drives). */
+    if (size < (FF_VOLUMES >= 2 ? 4u : 2u)) {
+        errno = ERANGE;
+        return NULL;
+    }
+    fr = f_getcwd(buf, size > UINT_MAX ? UINT_MAX : (UINT)size);
+    if (fr != FR_OK) {
+        errno = fr == FR_NOT_ENOUGH_CORE ? ERANGE :
+                fr == FR_NO_PATH || fr == FR_NO_FILE ? ENOENT : EIO;
+        return NULL;
+    }
+    return buf;
+}
+
+/* The only supported path configuration query is the console's disabled
+ * control-character value. Validate file descriptors too, even when the
+ * requested configuration is unavailable. */
+long fpathconf(int fd, int name)
+{
+    if (fd < 0 || fd >= MAX_OPEN_FILES ||
+        (fd >= FIRST_FILE_FD && !open_files[fd].used)) {
+        errno = EBADF;
+        return -1;
+    }
+    if (name != _PC_VDISABLE) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (fd >= FIRST_FILE_FD) {
+        errno = ENOTTY;
+        return -1;
+    }
+    return _POSIX_VDISABLE;
+}

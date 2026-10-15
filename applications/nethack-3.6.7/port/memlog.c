@@ -20,8 +20,8 @@
  * A sample is taken and logged to a file on the volume at each level change -
  * which is when NetHack allocates most - so the numbers survive an
  * out-of-memory panic; the session peaks are also printed as the game exits.
- * This is measurement scaffolding: it costs one 24 KB memset at startup, one
- * file append per level, and one ~24 KB scan per level.
+ * This is measurement scaffolding: it costs one 20 KiB memset at startup, one
+ * bounded summary write per level, and one 20 KiB scan per level.
  */
 #include <fcntl.h>
 #include <stdint.h>
@@ -105,8 +105,8 @@ nh_mem_sample(void)
         stack_peak = s;
 }
 
-/* Called on every level change: sample both peaks and append them to the
- * volume log, so a later out-of-memory panic does not lose the history. */
+/* Sample peaks on level changes and retain the latest summary in a bounded
+ * volume log, so an out-of-memory panic does not lose the low-water marks. */
 void
 nh_mem_transition(int dlevel, long turn)
 {
@@ -119,7 +119,7 @@ nh_mem_transition(int dlevel, long turn)
                  dlevel, turn, heap_min_free, stack_peak);
     if (n <= 0)
         return;
-    fd = open(NH_LOGFILE, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    fd = open(NH_LOGFILE, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd < 0)
         return;
     (void) write(fd, buf, (size_t) n);

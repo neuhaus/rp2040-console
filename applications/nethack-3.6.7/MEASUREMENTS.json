@@ -1,97 +1,214 @@
 {
-  "current_checkpoint": {
-    "format": "0x03060781",
-    "firmware_bytes": 1549940,
-    "static_sram_bytes": 137044,
-    "heap_budget_bytes": 112812,
-    "stack_reserve_bytes": 20480,
-    "clean_build_and_regressions": "passed",
-    "many_level_hardware_save_restore": "passed",
-    "overview_records": 49,
-    "cached_levels": 48,
+  "date": "2026-10-15",
+  "format": "0x03060782",
+  "upstream_commit": "ed600d9f0f3c37677418f0150f59363ca641f3dc",
+  "sdk": "2.3.1",
+  "compiler": "ARM GCC 15.3.1 / newlib 4.6",
+  "selective_lto": true,
+  "stack_reserve_bytes": 20480,
+  "volume_offset": "0x17A000",
+  "volume_bytes": 548864,
+  "fat_root_entries": 256,
+  "archive_entries": 138,
+  "archive_bytes": 301799,
+  "ordinary_build": {
+    "firmware_bytes": 1545828,
+    "static_sram_bytes": 133440,
+    "heap_budget_bytes": 116416,
+    "checks": "passed",
+    "hardware_startup": "passed"
+  },
+  "diagnostic_build": {
+    "firmware_bytes": 1547796,
+    "static_sram_bytes": 133492,
+    "heap_budget_bytes": 116364,
+    "checks": "passed"
+  },
+  "scenario": {
+    "mode": "wizard forced travel and maximum branch lengths",
+    "seed": "0x5eed1234",
+    "extra_equipped_soldiers": 30,
+    "individual_test_rings": 150,
+    "pre_endgame_levels": 76,
+    "playable_planes": 5,
+    "playable_levels_total": 81,
+    "cached_levels_before_save": 75
+  },
+  "first_checkpoint": {
+    "result": "passed",
     "monsters_before_after": [
-      176,
-      176
+      175,
+      175
     ],
     "objects_before_after": [
-      1037,
-      1037
+      1032,
+      1032
     ],
     "contained_before_after": [
-      156,
-      156
+      162,
+      162
     ],
-    "companion_bytes": 25333,
-    "free_volume_saved_bytes": 27136,
-    "free_volume_restored_bytes": 52736,
-    "maximum_allocated_heap_through_save_bytes": 108536,
-    "restore_peak_allocated_heap_bytes": 107324,
-    "maximum_stack_bytes": 13128,
-    "restore_stack_bytes": 4048,
-    "all_cached_levels_byte_identical": true,
-    "fsck_saved_restored": "passed",
-    "failed_sram_requests": 0,
-    "stack_guards_intact": true,
-    "cached_depths_revisited": 48,
-    "cached_revisit_owner_warnings": 0,
-    "second_cycle": {
-      "result": "passed",
-      "monsters_before_after": [
-        176,
-        176
-      ],
-      "objects_before_after": [
-        1032,
-        1032
-      ],
-      "contained_before_after": [
-        156,
-        156
-      ],
-      "overview_records": 49,
-      "companion_bytes": 25150,
-      "free_volume_saved_bytes": 21504,
-      "save_peak_allocated_heap_bytes": 108664,
-      "restore_peak_allocated_heap_bytes": 107332,
-      "restore_stack_bytes": 4048,
-      "failed_sram_requests": 0,
-      "stack_guards_intact": true,
-      "saved_volume_fsck": "passed"
-    },
-    "ordinary_build": {
-      "firmware_bytes": 1549780,
-      "static_sram_bytes": 136988,
-      "heap_budget_bytes": 112868,
-      "stack_reserve_bytes": 20480,
-      "build_checks": "passed"
-    },
-    "normal_quit": {
-      "cached_levels_remaining": 0,
-      "free_volume_bytes": 192000,
-      "fsck": "passed"
-    },
-    "startup_orphan_cleanup": {
-      "cached_levels_before": 48,
-      "cached_levels_after": 0,
-      "new_game_overview_records": 1,
-      "fsck": "passed"
-    }
+    "overviews_before_after": [
+      76,
+      76
+    ],
+    "companion_bytes": 20415,
+    "free_volume_saved_bytes": 44032,
+    "fsck": "passed"
   },
-  "historical_combined_file_format": {
-    "stack_reserve_bytes": 20480,
-    "diagnostic_heap_budget_bytes": 112724,
-    "maximum_stack_bytes": 12904,
-    "maximum_observed_allocated_heap_bytes": 108996,
-    "all_sampled_stack_guards_intact": true,
-    "all_sampled_failed_sram_requests_zero": true,
-    "compact_save_incarnation": "0x03060780",
-    "archive_bytes": 312805,
-    "archive_entries": 138,
-    "level_programs": 120,
-    "long_save_bytes": 156130,
-    "long_save_free_volume_bytes": 39424,
-    "long_restore_result": "FAIL: cannot write 512 bytes to file #4; zero flash volume space; no SRAM allocation failure",
-    "note": "Experimental: SRAM probes passed, but accumulated-game restore exhausted flash. Plane tests used a separate small fixture after recovery; not a full ascension.",
-    "scope": "Historical hardware measurements for format 0x03060780; not measurements of the current single-checkpoint implementation."
-  }
+  "fully_mapped_checkpoint": {
+    "result": "passed",
+    "levels_revisited": 76,
+    "floor_objects_remembered": true,
+    "monsters_before_after": [
+      175,
+      175
+    ],
+    "objects_before_after": [
+      1029,
+      1029
+    ],
+    "contained_before_after": [
+      162,
+      162
+    ],
+    "overviews_before_after": [
+      76,
+      76
+    ],
+    "companion_bytes": 20326,
+    "free_volume_saved_bytes": 11264,
+    "fsck": "passed"
+  },
+  "maximum_allocated_heap_bytes": 110540,
+  "maximum_stack_bytes": 15292,
+  "failed_sram_requests": 0,
+  "all_sampled_stack_guards_intact": true,
+  "world_done_allocator": {
+    "live_bytes": 109368,
+    "arena_bytes": 111280,
+    "free_inside_arena_bytes": 1912,
+    "largest_free_block_bytes": 1772,
+    "growth_bytes": 5084
+  },
+  "fully_mapped_save_growth_bytes": 3940,
+  "plane_checkpoints": [
+    {
+      "plane": "earth",
+      "before": {
+        "Obj total": 198,
+        "Mon total": 64,
+        "Over total": 77,
+        "contained": 150
+      },
+      "after": {
+        "Obj total": 198,
+        "Mon total": 64,
+        "Over total": 77,
+        "contained": 150
+      },
+      "fat": "clean",
+      "free_volume_saved_bytes": 220672
+    },
+    {
+      "plane": "air",
+      "before": {
+        "Obj total": 171,
+        "Mon total": 52,
+        "Over total": 78,
+        "contained": 150
+      },
+      "after": {
+        "Obj total": 171,
+        "Mon total": 52,
+        "Over total": 78,
+        "contained": 150
+      },
+      "fat": "clean",
+      "free_volume_saved_bytes": 218112
+    },
+    {
+      "plane": "fire",
+      "before": {
+        "Obj total": 211,
+        "Mon total": 64,
+        "Over total": 79,
+        "contained": 150
+      },
+      "after": {
+        "Obj total": 211,
+        "Mon total": 64,
+        "Over total": 79,
+        "contained": 150
+      },
+      "fat": "clean",
+      "free_volume_saved_bytes": 215552
+    },
+    {
+      "plane": "water",
+      "before": {
+        "Obj total": 166,
+        "Mon total": 62,
+        "Over total": 80,
+        "contained": 150
+      },
+      "after": {
+        "Obj total": 166,
+        "Mon total": 62,
+        "Over total": 80,
+        "contained": 150
+      },
+      "fat": "clean",
+      "free_volume_saved_bytes": 212992
+    },
+    {
+      "plane": "astral",
+      "before": {
+        "Obj total": 541,
+        "Mon total": 93,
+        "Over total": 81,
+        "contained": 152
+      },
+      "after": {
+        "Obj total": 541,
+        "Mon total": 93,
+        "Over total": 81,
+        "contained": 152
+      },
+      "fat": "clean",
+      "free_volume_saved_bytes": 206848
+    }
+  ],
+  "ascension": {
+    "result": "passed",
+    "real_amulet_offered": true,
+    "normal_offer_command": true,
+    "demigod_message": true,
+    "new_game_prompt_reached": true,
+    "last_boot_peak_allocated_heap_bytes": 74628,
+    "last_boot_stack_bytes": 6896,
+    "failed_sram_requests": 0,
+    "stack_guard_intact": true,
+    "post_exit_free_volume_bytes": 230912,
+    "remaining_checkpoints": 0,
+    "remaining_cached_levels": 0,
+    "post_exit_fsck": "passed"
+  },
+  "regressions": {
+    "special_level_programs": 120,
+    "pooled_sessions": 100,
+    "sanitizer_codec_cases": 2240,
+    "quest_role_alignment_cases": 78,
+    "object_monster_pointer_combinations": 32,
+    "checkpoint_integrity": "passed",
+    "map_raw_rle_and_glyphs": "passed",
+    "console_tools": "passed",
+    "shared_path_apis": "passed"
+  },
+  "limits": [
+    "Wizard resource stress scenario, not a naturally played combat ascension",
+    "Not every role, seed, combat path or arbitrary monster/object population",
+    "Painted stack guard sampled, not hardware protection",
+    "Physical soft reboot unverified"
+  ]
 }

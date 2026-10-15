@@ -395,6 +395,16 @@ Does not fit:
 
 FatFs, over a region of the same flash the program runs in, authored on the host.
 
+The shared `src/fileio.c` layer supplies `chdir()` and `getcwd()` as well as
+descriptor operations. `getcwd()` uses a caller-provided buffer and returns
+FatFs's drive-qualified current path (for example `0:/save`), which can be
+passed back to `chdir()` or `open()`. It does not provide the allocating
+`getcwd(NULL, ...)` extension. `fpathconf()` supports `_PC_VDISABLE` on console
+descriptors 0–2; unsupported requests return `EINVAL`, invalid or closed
+descriptors return `EBADF`, and this terminal query on an open file returns
+`ENOTTY`. With `PICO_SDK_PATH` set, `tests/run.sh` includes the path API tests
+using the SDK's FatFs headers.
+
 FatFs comes with the Pico SDK (it ships inside TinyUSB), so it is not a new
 dependency. The volume is built on the host by `tools/mkvolume.sh` with
 `mkfs.vfat` and `mtools`, checked with `fsck.vfat`, and flashed as a UF2 at a
