@@ -26,6 +26,19 @@ extern void *__real__calloc_r(struct _reent *, size_t, size_t);
 extern void *__real__realloc_r(struct _reent *, void *, size_t);
 extern void __real__free_r(struct _reent *, void *);
 
+#ifdef RP2040_NETHACK_POOL64
+#include "nethack_pool.h"
+#define program_malloc nh_pool_malloc
+#define program_calloc nh_pool_calloc
+#define program_realloc nh_pool_realloc
+#define program_free nh_pool_free
+#else
+#define program_malloc __real__malloc_r
+#define program_calloc __real__calloc_r
+#define program_realloc __real__realloc_r
+#define program_free __real__free_r
+#endif
+
 static struct allocation **find(void *pointer)
 {
     struct allocation **link = &allocations;
@@ -50,7 +63,7 @@ static void *remember(struct _reent *context, void *pointer)
         return pointer;
     struct allocation *entry = __real__malloc_r(_GLOBAL_REENT, sizeof(*entry));
     if (entry == NULL) {
-        __real__free_r(context, pointer);
+        program_free(context, pointer);
         _REENT_ERRNO(context) = ENOMEM;
         return NULL;
     }
@@ -63,7 +76,7 @@ static void *remember(struct _reent *context, void *pointer)
 void *__wrap__malloc_r(struct _reent *context, size_t size)
 {
     int outer = allocator_depth++ == 0;
-    void *pointer = __real__malloc_r(context, size);
+    void *pointer = program_malloc(context, size);
     if (outer) pointer = remember(context, pointer);
     --allocator_depth;
     return pointer;
@@ -73,7 +86,7 @@ void *__wrap__calloc_r(struct _reent *context, size_t count, size_t size)
 {
     if (size && count > SIZE_MAX / size) { _REENT_ERRNO(context) = ENOMEM; return NULL; }
     int outer = allocator_depth++ == 0;
-    void *pointer = __real__calloc_r(context, count, size);
+    void *pointer = program_calloc(context, count, size);
     if (outer) pointer = remember(context, pointer);
     --allocator_depth;
     return pointer;
@@ -83,7 +96,7 @@ void __wrap__free_r(struct _reent *context, void *pointer)
 {
     int outer = allocator_depth++ == 0;
     if (outer) forget(pointer);
-    __real__free_r(context, pointer);
+    program_free(context, pointer);
     --allocator_depth;
 }
 
@@ -98,7 +111,7 @@ void *__wrap__realloc_r(struct _reent *context, void *pointer, size_t size)
         reserved = __real__malloc_r(_GLOBAL_REENT, sizeof(*reserved));
         if (!reserved) { --allocator_depth; _REENT_ERRNO(context) = ENOMEM; return NULL; }
     }
-    void *result = __real__realloc_r(context, pointer, size);
+    void *result = program_realloc(context, pointer, size);
     /* Failed realloc leaves the original block and its ownership intact. */
     if (outer && result) {
         if (*link) (*link)->pointer = result;
@@ -173,7 +186,7 @@ int rp2040_soft_run(int argc, char **argv)
     while (allocations) {
         struct allocation *entry = allocations;
         allocations = entry->next;
-        __real__free_r(_GLOBAL_REENT, entry->pointer);
+        program_free(_GLOBAL_REENT, entry->pointer);
         __real__free_r(_GLOBAL_REENT, entry);
     }
     return exit_status;

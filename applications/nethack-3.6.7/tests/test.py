@@ -7,12 +7,12 @@ import subprocess
 import sys
 HERE=Path(__file__).resolve().parent
 p=argparse.ArgumentParser(description=__doc__)
-p.add_argument('--build-dir',type=Path,required=True,help='Artifact build directory')
-a=p.parse_args();work=a.build_dir.resolve();src=work/'game/source';console=work/'console';out=work/'tests';out.mkdir(exist_ok=True)
+p.add_argument('--build-dir',type=Path,required=True,help='Application build directory')
+a=p.parse_args();work=a.build_dir.resolve();src=work/'source';console=HERE.parents[2];out=work/'tests';out.mkdir(exist_ok=True)
 def run(code,name,extra=()):
  c=out/(name+'.c');c.write_text(code);exe=out/name
- subprocess.run([sys.executable,str(HERE/'host32_cc.py'),'--specs=nano.specs','-DRP2040_NETHACK_POOL64=1','-DRP2040_CONSOLE_SOFT_REBOOT=1','-I'+str(console/'src'),'-I'+str(console/'include'),str(c),*map(str,extra),'-o',str(exe)],check=True)
- subprocess.run([sys.executable,str(HERE/'host32_run.py'),str(exe)],check=True)
+ subprocess.run([sys.executable,str(HERE.parent/'port/host/host32_cc.py'),'--specs=nano.specs','-DRP2040_NETHACK_POOL64=1','-DRP2040_CONSOLE_SOFT_REBOOT=1','-I'+str(console/'src'),'-I'+str(console/'include'),str(c),*map(str,extra),'-o',str(exe)],check=True)
+ subprocess.run([sys.executable,str(HERE.parent/'port/host/host32_run.py'),str(exe)],check=True)
 h=(src/'include/mkroom.h').read_text();c=(src/'src/mkroom.c').read_text();dh=(src/'include/dungeon.h').read_text()
 room=re.search(r'struct mkroom \{.*?\n\};',h,re.S).group()
 child=re.search(r'#define ROOM_CHILD[^\n]+',h).group()

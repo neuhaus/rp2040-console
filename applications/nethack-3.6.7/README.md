@@ -1,274 +1,63 @@
-# NetHack 3.6.7 on a 2 MB Pico
+# NetHack 3.6.7 on RP2040
 
-> [!WARNING]
-> While it runs already, you will run out of flash memory during an ascension run! :boom: Work in progress.
-
-Source: [NetHack/NetHack](https://github.com/NetHack/NetHack), tag
-`NetHack-3.6.7_Released`, commit
-`ed600d9f0f3c37677418f0150f59363ca641f3dc`. The recipe applies configuration
-changes in a private generated source tree and adds the CMake manifest,
-compatibility header, platform adapters, the Tamp and uzlib codecs and a
-replacement data librarian. Upstream game C files and the supplied Git checkout
-remain unchanged. Keep the upstream `dat/license` with distributions; it is
-included in the FAT image.
-
-## Why the data is compressed
-
-NetHack 3.6.7's program is larger than 3.1.3's, and so is its data. Uncompressed,
-the firmware plus the data files do not fit on the Pico's 2 MB of flash:
-dropping every optional file still leaves more data than the chip has room for.
-So the read-only data is compressed, which is what makes the port fit:
-
-- Every file NetHack reads through its data librarian (`dungeon`, the level
-  descriptions, `quest.dat`, the encyclopedia `data`, `symbols`, rumors,
-  oracles, the help screens, `bogusmon`/`engrave`/`epitaph`, `options`) is
-  compressed with raw deflate, decoded on the board by
-  [uzlib](https://github.com/micropython/micropython/tree/master/lib/uzlib)
-  (a few KB of code and a 4 KB window per open file).  Deflate beats the Tamp
-  codec used for the level and save files by 15-25% on this data: it adds
-  Huffman coding on top of LZ77, which Tamp lacks.
-- The files are collected into a single archive, `nhdata`, rather than left
-  separate. A FAT volume rounds each file up to a whole cluster; in one file
-  they cost one file's worth of slack.
-- The window is chosen per entry. `build.py` probes 1-32 KB and keeps the
-  smallest for each file, and the directory records the winner, so the decoder
-  allocates just that much for each open file. The big text files read once
-  mid-game (`data`, `quest.dat`, `rumors`) take the widest, 32 KB, while a level
-  template -- decoded while a new level is being built, when free memory is
-  tightest -- stays at 1-4 KB.
-- The recipe defines `DLB` and replaces `src/dlb.c`, so NetHack's existing
-  `dlb_fopen`/`dlb_fread`/`dlb_fseek` calls land on a streaming inflate.
-  Seeking is emulated by decoding and discarding; a backward seek restarts the
-  entry. NetHack's access patterns are almost entirely forward scans, and the
-  files are small enough that this is cheaper than the flash it saves.
-
-`build.py` packs the archive with the host's zlib and then decodes it back with
-the same uzlib the board runs (`port/host/nhdata_check.c`), so a decoder
-mismatch fails the build rather than the game.
-
-The 138 files packed into `nhdata` total **939,508 bytes (about 918 KB)**
-uncompressed. Raw deflate brings them to about **305 KB** (a ratio near 0.33),
-plus a 3,876-byte header and directory. Only the compressed form fits:
-uncompressed as separate files the same data would not fit on the volume
-alongside the firmware, and even a single uncompressed archive would be larger
-than what is left over after the firmware.
-
-`tribute` is the one data file left out: its compressed form is the difference
-between fitting and not, and it is the least of what the library carries (the
-passages shown when reading a novel, and the death quotes). The game handles
-its absence the way it handles any missing optional data file.
-
-## Saving levels
-
-NetHack keeps one file per level the player has left and re-reads it on return.
-On a volume this size that is the binding constraint on how deep a game can go,
-so level files and save files are compressed too. They use Tamp rather than the
-data library's deflate: a level file is written on the board while playing, and
-Tamp's compressor is far smaller than a deflate encoder. Upstream's `ZEROCOMP`
-zero-run codec is kept as well and composed *in front of* Tamp: the bytes are
-first run-length encoded (a run of N zeros becomes two bytes, `00 <N-1>`), then
-Tamp-compressed, and restore reverses the two. That is not redundant with Tamp
--- it cuts 9-12% off a level file -- because Tamp caps its match length, so a
-long zero run costs it several tokens. The rest of the plumbing is upstream's:
-the `SFI1_ZEROCOMP` savefile flag and the `bufon`/`bufoff` raw-front-matter
-protocol.
-
-Level files drop from about 20-30 KB to about 2-3 KB (roughly 10x), so about
-**72 levels** fit in the free space instead of about four. Without this the
-volume filled after a few levels, the level write failed as a short write, and
-NetHack panicked with an empty reason line (the panic save could not be written
-either, so `NH_abort()` ran before the reason was printed).
-
-Save/restore has been exercised on hardware across a power cycle, and a game has
-descended past dungeon level 10 with no volume trouble. When the game ends it
-prints how many bytes are free on the volume, so the fit of a save can be judged
-without a host.
+Play NetHack on a standard Pico with 2 MiB flash over USB serial. No SD card is
+needed.
 
 ## Build
 
-Install the [common prerequisites](../README.md) plus the 32-bit host compiler
-and parser generators. On an x86-64 Debian/Ubuntu host:
+Install the [console prerequisites](../../README.md#build-an-application), plus
+Bash, Bison, Flex and patch. Set `PICO_SDK_PATH` to your Pico SDK 2.3.1 directory
+and put the ARM toolchain, dosfstools and mtools on `PATH`.
+
+Run from the `rp2040-console` repository root. On Apple Silicon, install QEMU
+with `qemu-system-arm` and run:
 
 ```sh
-sudo apt install gcc-multilib libc6-dev-i386 bison flex patch
-git clone https://github.com/NetHack/NetHack.git nethack
-git -C nethack checkout NetHack-3.6.7_Released
-python3 applications/nethack-3.6.7/build.py --source ./nethack
+applications/nethack-3.6.7/build.sh --qemu-generators --jobs 4
 ```
 
-Run the last command from the console repository root with `PICO_SDK_PATH` set.
-Without `--source`, the script clones upstream into its build directory. It always
-archives the pinned commit, regardless of the checkout's current branch or edits.
-`--build-dir /absolute/path` selects a different private output directory;
-`--jobs 4` controls ARM build parallelism. A nonempty unrelated output directory
-is rejected. The recipe owns and regenerates its `source/` tree; do not edit it.
-Edit this recipe's `port/` files instead.
-
-The default host command is `gcc -m32`. The datagenerators must use 32-bit `long`
-and compatible structure layouts; a native 64-bit build is insufficient. On other
-hosts, supply a suitable compiler/wrapper and runner, for example:
+On x86-64 Linux, install `gcc-multilib` and `libc6-dev-i386`, then run:
 
 ```sh
-export HOST_CC=i686-linux-gnu-gcc
-export HOST_CFLAGS=''
-export HOST_RUNNER='qemu-i386 -L /path/to/i386/sysroot'
-python3 applications/nethack-3.6.7/build.py --source ./nethack
+applications/nethack-3.6.7/build.sh --jobs 4
 ```
 
-`HOST_CC`, `HOST_CFLAGS` and `HOST_RUNNER` are shell-style argument lists, parsed
-without shell execution. `HOST_LD_LIBRARY_PATH` optionally sets library lookup
-for executed host generators. The ARM compiler remains `arm-none-eabi-gcc`.
+The build downloads NetHack 3.6.7. Add `--source /path/to/NetHack` to use an
+existing Git checkout, which is left unchanged. Add `--build-dir /path/to/output`
+to change the output directory. `build.sh --help` lists the available options.
 
-Two compression libraries are vendored, both fetched with NetHack and needing no
-network access of their own: Tamp for the level and save files (`port/tamp/`,
-Apache 2.0, `port/tamp/LICENSE.txt`) and uzlib for the data library
-(`port/uzlib/`, zlib licence). `build.py` packs `nhdata` with the host's zlib,
-then builds and runs `port/host/nhdata_check.c`, which decodes every entry with
-the same uzlib the board runs and compares it with its source, so a bad archive
-fails the build rather than the board.
+## Customize
 
-### Startup options
-
-The image can carry a `NETHACKOPTIONS` value, for settings that belong to a
-build rather than to the source. Pass them with `--nethack-options`:
+Use `--nethack-options` for comma-separated startup settings:
 
 ```sh
-python3 applications/nethack-3.6.7/build.py \
-    --nethack-options 'symset:DECgraphics,number_pad:-1'
+applications/nethack-3.6.7/build.sh --qemu-generators \
+  --nethack-options 'symset:DECgraphics,number_pad:-1' \
+  --banner 'Welcome to NetHack'
 ```
 
-The value is comma-separated, exactly as NetHack's `NETHACKOPTIONS` is. The
-image already turns `color` on: upstream leaves colour off in a Unix tty build,
-because it expects terminals of every stripe, while this board always drives a
-colour-capable ANSI emulator. Anything passed here is appended after `color`,
-so a build can still ask for `!color`. Two are often asked for:
+`DECgraphics` enables DEC line drawing. `number_pad:-1` swaps the vi movement
+keys `y` and `z` for QWERTZ keyboards. Color is enabled by default; `!color`
+disables it. Omit `--nethack-options` for defaults. `--banner ''` hides the
+startup banner. Use `O` in the game to change gameplay options.
 
-- `symset:DECgraphics` selects the DEC line-drawing symbol set from the
-  `symbols` file. This is the set behind the old `DECgraphics` option; in 3.6.7
-  that option is config-file-only and no longer appears in the `O` menu, where
-  the equivalent is the `symset` compound option.
-- `number_pad:-1` is NetHack's "German keyboard" setting: vi-keys with the `y`
-  and `z` directions swapped, for a QWERTZ layout.
+## Flash and play
 
-These two are personal choices, so the recipe ships neither and a default build
-leaves them at upstream's values. `build.py` always passes the option through
-(empty when the flag is absent), so a later build without the flag is clean
-again rather than keeping the previous value.
+The default output directory is `build/nethack-3.6.7/hardware/`.
 
-### Startup banner and saved games
+1. Hold BOOTSEL while connecting the Pico by USB.
+2. Copy `nethack.uf2` to the `RPI-RP2` drive.
+3. Reconnect with BOOTSEL held and copy `nethack-volume.uf2` to the drive.
+4. Open USB serial at 115200 baud in an **80×24 VT100/xterm-compatible terminal**.
+   The port is usually `/dev/cu.usbmodem*` on macOS or `/dev/ttyACM0` on Linux.
 
-Before the game takes the screen, the image prints a one-line banner and lists
-the saved games in `save/`, each with its size and the date the session clock
-gave it:
+Flash both files for the initial installation. Flashing the data volume replaces
+saved games and scores. When the program exits, reconnect the terminal after
+the Pico reboots.
 
-```
-RP2040 Console ready.
-Saved games in save/:
-  1000wizard               390368 bytes  2026-10-13 18:22
-```
+## Saved games
 
-The banner is not a literal in the port. It is baked into the image as the
-`BANNER` environment variable, set at build time from `--banner` or `$BANNER`
-(the default is the line above); `--banner ''` drops it. The game prints its
-own NetHack version banner, so this line deliberately does not repeat it. The
-listing needs a "last saved" date, which FatFs cannot supply -- it is built
-timestamp-off and stamps every file it writes 2022 -- so the engine remembers
-the session time when it closes a file and reads it back for the listing; a
-file it never wrote is shown without a date. Nothing clears the screen here, so
-the lines stay in the terminal's scrollback once the game draws over them.
+Only one saved game is supported.
 
-## Outputs and checks
-
-Run the save codec regression from the console repository root with a local
-NetHack checkout and a native C compiler:
-
-```sh
-python3 tests/nethack_codec.py --source /path/to/NetHack --sanitize
-```
-
-Omit `--sanitize` if the compiler does not support sanitizers.
-
-Default outputs are under `build/nethack-3.6.7/hardware/`:
-
-- `nethack.uf2`: XIP firmware below flash offset `0x17E000` (about 1.49 MB).
-- `nethack-volume.uf2`: 520 KB FAT12 volume at `0x17E000`, ending at 2 MB.
-- `nethack.elf`, `nethack.bin` and `nethack-volume.img`: inspection artifacts.
-
-The volume holds `nhdata` (the compressed library, which carries every data
-file including `symbols`), empty `record`,
-`perm`, `logfile` and `xlogfile` (NetHack locks and appends to all four, and
-`lock_file()` opens the file itself), and a `save` directory. About 302 KB of
-the 520 KB is used, leaving about **218 KB** for the levels a game has visited.
-The volume is FAT12 with 512-byte clusters, so the many small level files cost
-almost no slack.
-
-The split between firmware and volume is set by `FS_OFFSET`/`FS_SIZE` in the
-manifest. The volume starts at `0x17E000`, just above the firmware (about 4 KB
-to spare); the volume's free space is what a long game has for level files, so
-raise `FS_OFFSET` only as far as the savegame budget allows.
-
-The build generates all game data, checks host/ARM sizes and offsets, validates
-firmware/heap/stack bounds, checks FAT with fsck and verifies UF2 addresses and
-family IDs. `HEAP_END=0x2003c000` leaves 24 KB above the heap for stack/SDK
-scratch. NetHack's own static data is large (about 146 KB), so the heap budget
-(about 94 KB, the rest of SRAM below the reserve) is smaller than on 3.1.3.
-
-Both peaks are measured rather than guessed: `port/memlog.c` tracks the heap
-free low-water (`__HeapLimit - _sbrk(0)`, which is monotonic because newlib's
-arena never shrinks), and paints the stack reserve at startup to find its
-high-water mark by scanning for the first disturbed byte. It appends a line to
-`/memlog` on the volume at each level change - the peaky moment, and a line that
-survives an out-of-memory panic - and prints the session peaks as the game exits
-(from `nh_terminate`, and from `panic`). The numbers decide `HEAP_END` /
-`STACK_RESERVE`: if the stack's real peak is small, `HEAP_END` can rise and hand
-the difference to the heap. The two biggest read-only tables, `mons[]` (~21 KB)
-and `extcmdlist[]` (~3 KB), are declared `const` by the patch so the toolchain
-places them in flash (XIP) rather than SRAM; only tables the game actually
-writes (`objects[]`, `artilist[]`, options) stay in RAM. The manifest uses
-`LEGACY_C`, `LEGACY_TIME32` and `RENAMES panic=nh_panic`.
-
-The configuration enables `NO_FILE_LINKS` with `LOCKDIR="/"`, so NetHack
-creates lock files exclusively instead of requesting hard links unsupported by
-FAT. The image check rejects a compiled lock implementation that calls `link()`.
-`NETWORK`, `TERMINFO` and `POSIX_JOB_CONTROL` are off, `COMPRESS`/`INSURANCE`
-are off, `HACKDIR` is `/`, and `SYSCF` is off, so the game needs no `sysconf`
-file. `sys_random_seed()` uses the platform's `getentropy()` instead of
-`/dev/urandom`. No `USER` or `LOGNAME` is set in the environment, so the game
-asks for a character name rather than defaulting to one.
-
-### Host and target must preprocess alike
-
-The data tables NetHack indexes (`objects[]`, `mons[]`) are compiled from the
-same sources by the program and by the host generators. `makedefs` writes the
-name-to-index headers (`onames.h`, `pm.h`) from a host build, so any feature
-toggle that adds or removes a table entry has to be seen by *both*, or the
-indices disagree and the program indexes the wrong entry. Concretely, `NOMAIL`
-removes the mail scroll in `objects.c` and the mail daemon in `monst.c`; if the
-host generator keeps them, every later index shifts by one and the game aborts
-with `init-prob error for class 13`.
-
-Because of that, the toggles shared with the host live in `port/compat.h`,
-which the recipe force-includes into the program and its host generators alike,
-rather than in the manifest's `DEFINES` (which reaches only the program). Add a
-new toggle that changes a data table in `compat.h`, not in `CMakeLists.txt`, and
-check it the same way: compile `objects.c` for the host and for ARM and diff the
-per-index class and probability columns.
-
-For optional application restart while preserving the USB runtime:
-
-```sh
-python3 applications/nethack-3.6.7/build.py --source ./nethack --soft-reboot
-```
-
-Outputs then go to `build/nethack-3.6.7/soft/` with the same filenames and flash
-layout. Hardware reboot is the default and is what the recipe ships: soft reboot
-adds about 1 KB of static RAM and, heavier over a long game, a bookkeeping
-allocation for every `malloc` plus a fixed exit-handler table. Read the
-[supported single-threaded C profile](../../INTERNALS.md#optional-soft-reboot)
-before enabling soft reboot.
-
-This recipe builds ARM images and runs the host data-library round-trip check.
-It has been run on a Pico: it boots, creates a character, plays, and
-save/restore across a power cycle works -- a game has reached dungeon level 10
-with the level/save volume still comfortable. Peak heap use over a long game
-remains unmeasured; the heap budget is the tightest part of the port.
+See [INTERNALS.md](INTERNALS.md) for source customization, regression tests and
+implementation details, and [RESULTS.md](RESULTS.md) for measurements.

@@ -44,7 +44,7 @@ include(${RP2040_CONSOLE_DIR}/cmake/rp2040-console.cmake)
 
 # HACKCSRC is exactly every src/*.c.  src/vis_tab.c is generated there by
 # `makedefs -z` before this configure runs, so the glob picks it up too.
-# src/dlb.c is the recipe's Tamp-backed data librarian, copied over the
+# src/dlb.c is the recipe's raw-deflate data librarian, copied over the
 # stock one by build.py.
 file(GLOB SRCS src/*.c win/tty/*.c)
 list(APPEND SRCS
@@ -55,7 +55,7 @@ list(APPEND SRCS
         sys/share/ioctl.c
         sys/share/pmatchregex.c)
 
-# The data files are Tamp-compressed and collected into one archive by
+# The data files are deflate-compressed and collected into one archive by
 # build.py, so the volume carries `nhdata` alone.  Keeping them separate
 # would cost a 2 KB FAT cluster per file, and `symbols` is in the archive
 # too (the port serves its stdio FILE* from the librarian).
@@ -73,7 +73,7 @@ rp2040_console_game(NAME nethack ${_restart_option}
         DATA_DIRS save
         LISTDIR save
         FS_OFFSET 0x17E000 FS_SIZE 0x82000
-        HEAP_END 0x2003c000 STACK_RESERVE 24576)
+        HEAP_END 0x2003d000 STACK_RESERVE 20480)
 target_compile_options(nethack PRIVATE -Oz -fsigned-char
         -fno-unwind-tables -fno-asynchronous-unwind-tables)
 target_link_options(nethack PRIVATE --specs=nano.specs)
@@ -97,3 +97,13 @@ set_property(SOURCE tamp/common.c tamp/decompressor.c tamp/compressor.c APPEND P
 # platform prefix header).
 target_sources(nethack PRIVATE uzlib/tinflate.c)
 
+
+# Pool state is platform-owned, so it survives until soft-session cleanup
+# releases every tracked slot, before program globals are restored.
+target_sources(nethack PRIVATE ${RP2040_CONSOLE_DIR}/src/nethack_pool.c)
+target_compile_definitions(nethack PRIVATE RP2040_NETHACK_POOL64=1)
+if(NOT NETHACK_SOFT_REBOOT)
+    foreach(allocator _malloc_r _calloc_r _realloc_r _free_r)
+        target_link_options(nethack PRIVATE "-Wl,--wrap=${allocator}")
+    endforeach()
+endif()

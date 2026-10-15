@@ -1,5 +1,5 @@
---- pristine/include/config.h
-+++ edited/include/config.h
+--- a/include/config.h
++++ b/include/config.h
 @@ -197,8 +197,10 @@
  #endif
  
@@ -62,8 +62,114 @@
  #endif
  
  /*
---- pristine/include/unixconf.h
-+++ edited/include/unixconf.h
+--- a/include/dungeon.h
++++ b/include/dungeon.h
+@@ -246,12 +246,12 @@
+     /* custom naming */
+     char *custom;
+     unsigned custom_lth;
+-    struct mapseen_rooms {
+-        Bitfield(seen, 1);
+-        Bitfield(untended, 1);         /* flag for shop without shk */
+-    } msrooms[(MAXNROFROOMS + 1) * 2]; /* same size as rooms[] */
++    unsigned char msrooms[((MAXNROFROOMS + 1) * 4 + 7) / 8];
+     /* dead heroes; might not have graves or ghosts */
+     struct cemetery *final_resting_place; /* same as level.bonesinfo */
+ } mapseen;
+ 
++#define MSROOM_COUNT ((MAXNROFROOMS + 1) * 2)
++#define MSROOM_GET(m,i,f) (((m)->msrooms[(i)/4] >> (((i)%4)*2+(f))) & 1)
++#define MSROOM_SET(m,i,f,v) ((m)->msrooms[(i)/4] = ((m)->msrooms[(i)/4] & ~(1U << (((i)%4)*2+(f)))) | ((!!(v)) << (((i)%4)*2+(f))))
+ #endif /* DUNGEON_H */
+--- a/include/extern.h
++++ b/include/extern.h
+@@ -594,10 +594,10 @@
+ E void NDECL(init_ov_primary_symbols);
+ E void NDECL(init_ov_rogue_symbols);
+ E void FDECL(clear_symsetentry, (int, BOOLEAN_P));
+-E void FDECL(update_primary_symset, (struct symparse *, int));
+-E void FDECL(update_rogue_symset, (struct symparse *, int));
+-E void FDECL(update_ov_primary_symset, (struct symparse *, int));
+-E void FDECL(update_ov_rogue_symset, (struct symparse *, int));
++E void FDECL(update_primary_symset, (const struct symparse *, int));
++E void FDECL(update_rogue_symset, (const struct symparse *, int));
++E void FDECL(update_ov_primary_symset, (const struct symparse *, int));
++E void FDECL(update_ov_rogue_symset, (const struct symparse *, int));
+ E boolean FDECL(cursed_object_at, (int, int));
+ E nhsym FDECL(get_othersym, (int, int));
+ 
+@@ -1792,7 +1792,7 @@
+ E int FDECL(load_symset, (const char *, int));
+ E void NDECL(free_symsets);
+ E boolean FDECL(parsesymbols, (char *, int));
+-E struct symparse *FDECL(match_sym, (char *));
++E const struct symparse *FDECL(match_sym, (char *));
+ E void NDECL(set_playmode);
+ E int FDECL(sym_val, (const char *));
+ E int FDECL(query_color, (const char *));
+--- a/include/func_tab.h
++++ b/include/func_tab.h
+@@ -21,6 +21,6 @@
+     const char *f_text;
+ };
+ 
+-extern struct ext_func_tab extcmdlist[];
++extern const struct ext_func_tab extcmdlist[];
+ 
+ #endif /* FUNC_TAB_H */
+--- a/include/mkroom.h
++++ b/include/mkroom.h
+@@ -19,7 +19,7 @@
+     schar fdoor;          /* index for the first door of the room */
+     schar nsubrooms;      /* number of subrooms */
+     boolean irregular;    /* true if room is non-rectangular */
+-    struct mkroom *sbrooms[MAX_SUBROOMS]; /* Subrooms pointers */
++    unsigned char sbrooms[MAX_SUBROOMS]; /* subroom index + 1; zero is NULL */
+     struct monst *resident; /* priest/shopkeeper/guard for this room */
+ };
+ 
+@@ -40,6 +40,8 @@
+ 
+ extern NEARDATA struct mkroom rooms[(MAXNROFROOMS + 1) * 2];
+ extern NEARDATA struct mkroom *subrooms;
++#define ROOM_CHILD(r, i) ((r)->sbrooms[i] ? &subrooms[(r)->sbrooms[i] - 1] : (struct mkroom *) 0)
++typedef char room_child_index_fits[(MAXNROFROOMS < 255) ? 1 : -1];
+ /* the normal rooms on the current level are described in rooms[0..n] for
+  * some n<MAXNROFROOMS
+  * the vault, if any, is described by rooms[n+1]
+--- a/include/patchlevel.h
++++ b/include/patchlevel.h
+@@ -14,7 +14,7 @@
+  * Incrementing EDITLEVEL can be used to force invalidation of old bones
+  * and save files.
+  */
+-#define EDITLEVEL 0
++#define EDITLEVEL 129 /* RP2040 single checkpoint with retained level files */
+ 
+ #define COPYRIGHT_BANNER_A "NetHack, Copyright 1985-2023"
+ #define COPYRIGHT_BANNER_B \
+@@ -31,7 +31,7 @@
+  * PP = patch level, ee = edit level, L = literal suffix "L",
+  * with all four numbers specified as two hexadecimal digits.
+  */
+-#define VERSION_COMPATIBILITY 0x03060002L
++#define VERSION_COMPATIBILITY 0x03060781L
+ 
+ /****************************************************************************/
+ /* Version 3.6.x */
+--- a/include/permonst.h
++++ b/include/permonst.h
+@@ -64,7 +64,7 @@
+ #endif
+ };
+ 
+-extern NEARDATA struct permonst mons[]; /* the master list of monster types */
++extern NEARDATA const struct permonst mons[]; /* the master list of monster types */
+ 
+ #define VERY_SLOW 3
+ #define SLOW_SPEED 9
+--- a/include/unixconf.h
++++ b/include/unixconf.h
 @@ -34,7 +34,7 @@
  /* define any of the following that are appropriate */
  #define SVR4           /* use in addition to SYSV for System V Release 4 */
@@ -104,51 +210,1021 @@
  
  /*
   * If you want the static parts of your playground on a read-only file
---- pristine/sys/unix/unixmain.c
-+++ edited/sys/unix/unixmain.c
-@@ -12,6 +12,7 @@
- #include <sys/stat.h>
- #include <signal.h>
- #include <pwd.h>
-+#include <sys/random.h>
- #ifndef O_RDONLY
- #include <fcntl.h>
- #endif
-@@ -779,23 +780,23 @@
- sys_random_seed()
- {
-     unsigned long seed = 0L;
--    unsigned long pid = (unsigned long) getpid();
-     boolean no_seed = TRUE;
--#ifdef DEV_RANDOM
--    FILE *fptr;
- 
--    fptr = fopen(DEV_RANDOM, "r");
--    if (fptr) {
--        fread(&seed, sizeof (long), 1, fptr);
-+    /*
-+     * pico-bare: there is no /dev/urandom on the board.  The platform's
-+     * getentropy() mixes the RP2040 hardware RNG into the ring oscillator,
-+     * which is a real seed; fall back to the old weak one only if it fails.
-+     */
-+    if (getentropy(&seed, sizeof seed) == 0) {
-         has_strong_rngseed = TRUE;  /* decl.c */
-         no_seed = FALSE;
--        (void) fclose(fptr);
-     } else {
-         /* leaves clue, doesn't exit */
-         paniclog("sys_random_seed", "falling back to weak seed");
-     }
--#endif
-     if (no_seed) {
-+        unsigned long pid = (unsigned long) getpid();
+--- /dev/null
++++ b/src/checkpoint.c
+@@ -0,0 +1,118 @@
++/* RP2040 single checkpoint: bind the companion to its retained level files. */
++#include "hack.h"
++#include <stdint.h>
++#include <limits.h>
++#include <sys/stat.h>
++#define NH_LEVEL_MAX (MAXDUNGEON * MAXLEVEL + 1)
 +
-         seed = (unsigned long) getnow(); /* time((TIME_type) 0) */
-         /* Quick dirty band-aid to prevent PRNG prediction */
-         if (pid) {
---- pristine/src/save.c
-+++ edited/src/save.c
-@@ -776,133 +776,195 @@
++static void nh_checkpoint_io(int fd, void *buf, size_t n, int writing)
++{
++    unsigned char *p = buf;
++    while (n) {
++        int got = writing ? write(fd, p, n) : read(fd, p, n);
++        if (got <= 0)
++            panic(writing ? "cannot write checkpoint manifest"
++                          : "truncated checkpoint manifest");
++        p += got;
++        n -= got;
++    }
++}
++
++static uint32_t nh_checkpoint_crc(int fd, uint32_t *size)
++{
++    unsigned char buf[256];
++    uint32_t crc = UINT32_MAX;
++    int got, j;
++    *size = 0;
++    while ((got = read(fd, buf, sizeof buf)) > 0) {
++        int i;
++        if ((uint32_t) got > UINT32_MAX - *size) {
++            (void) nhclose(fd);
++            panic("checkpoint level too large");
++        }
++        *size += got;
++        for (i = 0; i < got; ++i) {
++            crc ^= buf[i];
++            for (j = 0; j < 8; ++j)
++                crc = (crc >> 1) ^ (UINT32_C(0xedb88320) & (0U - (crc & 1U)));
++        }
++    }
++    if (got < 0) {
++        (void) nhclose(fd);
++        panic("cannot read checkpoint level");
++    }
++    return ~crc;
++}
++
++void nh_checkpoint_write(int fd, int current)
++{
++    uint32_t magic = UINT32_C(0x4353484e); /* NHSC, little endian */
++    uint16_t count = 0, lev;
++    uint32_t size, crc;
++    int i, cached;
++    for (i = 1; i <= maxledgerno(); ++i)
++        if (i != current && (level_info[i].flags & LFILE_EXISTS)) ++count;
++    nh_checkpoint_io(fd, &magic, sizeof magic, 1);
++    nh_checkpoint_io(fd, &count, sizeof count, 1);
++    for (i = 1; i <= maxledgerno(); ++i) {
++        if (i == current || !(level_info[i].flags & LFILE_EXISTS)) continue;
++        cached = open_levelfile(i, (char *) 0);
++        if (cached < 0) panic("missing checkpoint level %d", i);
++        crc = nh_checkpoint_crc(cached, &size);
++        (void) nhclose(cached);
++        if (!size) panic("empty checkpoint level %d", i);
++        lev = i;
++        nh_checkpoint_io(fd, &lev, sizeof lev, 1);
++        nh_checkpoint_io(fd, &size, sizeof size, 1);
++        nh_checkpoint_io(fd, &crc, sizeof crc, 1);
++    }
++}
++
++void nh_checkpoint_read(int fd, int verify)
++{
++    uint32_t magic, size, crc, actual_size, actual_crc;
++    uint16_t count, lev;
++    unsigned char seen[(NH_LEVEL_MAX + 8) / 8];
++    int i, cached;
++    memset(seen, 0, sizeof seen);
++    nh_checkpoint_io(fd, &magic, sizeof magic, 0);
++    nh_checkpoint_io(fd, &count, sizeof count, 0);
++    if (magic != UINT32_C(0x4353484e) || count > NH_LEVEL_MAX)
++        panic("invalid checkpoint manifest");
++    for (i = 0; i < count; ++i) {
++        nh_checkpoint_io(fd, &lev, sizeof lev, 0);
++        nh_checkpoint_io(fd, &size, sizeof size, 0);
++        nh_checkpoint_io(fd, &crc, sizeof crc, 0);
++        if (!lev || lev > NH_LEVEL_MAX || !size
++            || (seen[lev / 8] & (1U << (lev % 8))))
++            panic("invalid checkpoint level %d", lev);
++        seen[lev / 8] |= 1U << (lev % 8);
++        if (!verify) continue;
++        cached = open_levelfile(lev, (char *) 0);
++        if (cached < 0) panic("missing checkpoint level %d", lev);
++        actual_crc = nh_checkpoint_crc(cached, &actual_size);
++        (void) nhclose(cached);
++        if (actual_size != size || actual_crc != crc)
++            panic("damaged checkpoint level %d", lev);
++    }
++}
++
++/* Cached levels belong to a game, not to the process which resumes it.
++ * Keep that game's original owner for later level reads and writes; updating
++ * only the tiny lock avoids decompressing/rewriting every cached level. */
++void nh_checkpoint_owner(int owner)
++{
++    int fd;
++    if (owner <= 0)
++        panic("invalid checkpoint owner");
++    if (hackpid == owner)
++        return;
++    set_levelfile_name(lock, 0);
++    fd = creat(fqname(lock, LEVELPREFIX, 0), FCMASK);
++    if (fd < 0)
++        panic("cannot update checkpoint owner");
++    nh_checkpoint_io(fd, &owner, sizeof owner, 1);
++    if (nhclose(fd) < 0)
++        panic("cannot close checkpoint owner");
++    hackpid = owner;
++}
+--- a/src/cmd.c
++++ b/src/cmd.c
+@@ -3352,7 +3352,7 @@
+ }
+ 
+ /* ordered by command name */
+-struct ext_func_tab extcmdlist[] = {
++const struct ext_func_tab extcmdlist[] = {
+     { '#', "#", "perform an extended command",
+             doextcmd, IFBURIED | GENERALCMD },
+     { M('?'), "?", "list all extended commands",
+--- a/src/display.c
++++ b/src/display.c
+@@ -1465,8 +1465,9 @@
+ 
+ typedef struct {
+     xchar new; /* perhaps move this bit into the rm structure. */
+-    int glyph;
++    short glyph;
+ } gbuf_entry;
++typedef char glyph_buffer_range_fits[(MAX_GLYPH <= 32767 && sizeof(short) == 2) ? 1 : -1];
+ 
+ static gbuf_entry gbuf[ROWNO][COLNO];
+ static char gbuf_start[ROWNO];
+--- a/src/do.c
++++ b/src/do.c
+@@ -1467,6 +1467,8 @@
+         oinit(); /* reassign level dependent obj probabilities */
+     }
+     reglyph_darkroom();
++    /* the new level is built or loaded: sample the heap and stack peaks */
++    nh_mem_transition((int) u.uz.dlevel, (long) moves);
+     u.uinwater = 0;
+     /* do this prior to level-change pline messages */
+     vision_reset();         /* clear old level's line-of-sight */
+--- a/src/drawing.c
++++ b/src/drawing.c
+@@ -548,7 +548,7 @@
+ 
+ void
+ update_ov_primary_symset(symp, val)
+-struct symparse *symp;
++const struct symparse *symp;
+ int val;
+ {
+     ov_primary_syms[symp->idx] = val;
+@@ -556,7 +556,7 @@
+ 
+ void
+ update_ov_rogue_symset(symp, val)
+-struct symparse *symp;
++const struct symparse *symp;
+ int val;
+ {
+     ov_rogue_syms[symp->idx] = val;
+@@ -564,7 +564,7 @@
+ 
+ void
+ update_primary_symset(symp, val)
+-struct symparse *symp;
++const struct symparse *symp;
+ int val;
+ {
+     primary_syms[symp->idx] = val;
+@@ -572,7 +572,7 @@
+ 
+ void
+ update_rogue_symset(symp, val)
+-struct symparse *symp;
++const struct symparse *symp;
+ int val;
+ {
+     rogue_syms[symp->idx] = val;
+@@ -632,7 +632,7 @@
+     "primary", "rogue", (const char *) 0,
+ };
+ 
+-struct symparse loadsyms[] = {
++const struct symparse loadsyms[] = {
+     { SYM_CONTROL, 0, "start" },
+     { SYM_CONTROL, 0, "begin" },
+     { SYM_CONTROL, 1, "finish" },
+--- a/src/dungeon.c
++++ b/src/dungeon.c
+@@ -2465,23 +2465,23 @@
+             continue;
+ 
+         ridx = u.urooms[i] - ROOMOFFSET;
+-        mptr->msrooms[ridx].seen = 1;
+-        mptr->msrooms[ridx].untended =
++        MSROOM_SET(mptr, ridx, 0, 1);
++        MSROOM_SET(mptr, ridx, 1,
+             (rooms[ridx].rtype >= SHOPBASE)
+                 ? (!(mtmp = shop_keeper(u.urooms[i])) || !inhishop(mtmp))
+                 : (rooms[ridx].rtype == TEMPLE)
+                       ? (!(mtmp = findpriest(u.urooms[i]))
+                          || !inhistemple(mtmp))
+-                      : 0;
++                      : 0);
+     }
+ 
+     /* recalculate room knowledge: for now, just shops and temples
+      * this could be extended to an array of 0..SHOPBASE
+      */
+-    for (i = 0; i < SIZE(mptr->msrooms); ++i) {
+-        if (mptr->msrooms[i].seen) {
++    for (i = 0; i < MSROOM_COUNT; ++i) {
++        if (MSROOM_GET(mptr, i, 0)) {
+             if (rooms[i].rtype >= SHOPBASE) {
+-                if (mptr->msrooms[i].untended)
++                if (MSROOM_GET(mptr, i, 1))
+                     mptr->feat.shoptype = SHOPBASE - 1;
+                 else if (!mptr->feat.nshop)
+                     mptr->feat.shoptype = rooms[i].rtype;
+@@ -2682,7 +2682,7 @@
+ {
+     mapseen *mptr = find_mapseen(&u.uz);
+ 
+-    mptr->msrooms[roomno].seen = 1;
++    MSROOM_SET(mptr, roomno, 0, 1);
+ }
+ 
+ /* #overview command */
+--- a/src/end.c
++++ b/src/end.c
+@@ -577,6 +577,8 @@
+     VA_START(str);
+     VA_INIT(str, char *);
+ 
++    /* print the RAM peaks before a panic loses the console */
++    nh_mem_report();
+     if (program_state.panicking++)
+         NH_abort(); /* avoid loops - this should never happen*/
+ 
+@@ -1708,6 +1710,7 @@
+ nh_terminate(status)
+ int status;
+ {
++    nh_mem_report();
+     program_state.in_moveloop = 0; /* won't be returning to normal play */
+ #ifdef MAC
+     getreturn("to exit");
+--- a/src/files.c
++++ b/src/files.c
+@@ -926,52 +926,9 @@
+ set_savefile_name(regularize_it)
+ boolean regularize_it;
+ {
+-#ifdef VMS
+-    Sprintf(SAVEF, "[.save]%d%s", getuid(), plname);
+-    if (regularize_it)
+-        regularize(SAVEF + 7);
+-    Strcat(SAVEF, ";1");
+-#else
+-#if defined(MICRO)
+-    Strcpy(SAVEF, SAVEP);
+-#ifdef AMIGA
+-    strncat(SAVEF, bbs_id, PATHLEN);
+-#endif
+-    {
+-        int i = strlen(SAVEP);
+-#ifdef AMIGA
+-        /* plname has to share space with SAVEP and ".sav" */
+-        (void) strncat(SAVEF, plname, FILENAME - i - 4);
+-#else
+-        (void) strncat(SAVEF, plname, 8);
+-#endif
+-        if (regularize_it)
+-            regularize(SAVEF + i);
+-    }
+-    Strcat(SAVEF, SAVE_EXTENSION);
+-#else
+-#if defined(WIN32)
+-    {
+-        static const char okchars[] =
+-            "*ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_-.";
+-        const char *legal = okchars;
+-        char fnamebuf[BUFSZ], encodedfnamebuf[BUFSZ];
+-
+-        /* Obtain the name of the logged on user and incorporate
+-         * it into the name. */
+-        Sprintf(fnamebuf, "%s", plname);
+-        if (regularize_it)
+-            ++legal; /* skip '*' wildcard character */
+-        (void) fname_encode(legal, '%', fnamebuf, encodedfnamebuf, BUFSZ);
+-        Sprintf(SAVEF, "%s%s", encodedfnamebuf, SAVE_EXTENSION);
+-    }
+-#else  /* not VMS or MICRO or WIN32 */
+-    Sprintf(SAVEF, "save/%d%s", (int) getuid(), plname);
+-    if (regularize_it)
+-        regularize(SAVEF + 5); /* avoid . or / in name */
+-#endif /* WIN32 */
+-#endif /* MICRO */
+-#endif /* VMS   */
++    nhUse(regularize_it);
++    Strcpy(SAVEF, "save/0game");
++
+ }
+ 
+ #ifdef INSURANCE
+@@ -1235,7 +1192,8 @@
+ 
+                 if (!entry)
+                     break;
+-                if (sscanf(entry->d_name, "%d%63s", &uid, name) == 2) {
++                if (!strcmp(entry->d_name, "0game")
++                    && sscanf(entry->d_name, "%d%63s", &uid, name) == 2) {
+                     if (uid == myuid) {
+                         char filename[BUFSZ];
+                         char *r;
+@@ -3235,6 +3193,12 @@
+ {
+     FILE *fp;
+ 
++    /* The symbol set is in the data librarian now (compressed); ask the
++     * librarian for a stdio FILE* over the decompressed stream.  Fall back to
++     * the filesystem for a build that ships "symbols" as a plain file. */
++    if ((fp = nhdlb_memopen(SYMBOLS)) != 0)
++        return fp;
++
+     fp = fopen_datafile(SYMBOLS, "r",
+ #ifdef WIN32
+                             SYSCONFPREFIX
+@@ -3311,7 +3275,7 @@
+ int which_set;
+ {
+     int val, i;
+-    struct symparse *symp;
++    const struct symparse *symp;
+     char *bufp, *commentp, *altp;
+ 
+     if (strlen(buf) >= BUFSZ)
+--- a/src/mklev.c
++++ b/src/mklev.c
+@@ -155,7 +155,7 @@
+     croom->irregular = FALSE;
+ 
+     croom->nsubrooms = 0;
+-    croom->sbrooms[0] = (struct mkroom *) 0;
++    croom->sbrooms[0] = 0;
+     if (!special) {
+         for (x = lowx - 1; x <= hix + 1; x++)
+             for (y = lowy - 1; y <= hiy + 1; y += (hiy - lowy + 2)) {
+@@ -213,7 +213,7 @@
+     croom = &subrooms[nsubroom];
+     do_room_or_subroom(croom, lowx, lowy, hix, hiy, lit, rtype, special,
+                        (boolean) FALSE);
+-    proom->sbrooms[proom->nsubrooms++] = croom;
++    proom->sbrooms[proom->nsubrooms++] = (unsigned char) (croom - subrooms + 1);
+     croom++;
+     croom->hx = -1;
+     nsubroom++;
+@@ -1091,9 +1091,9 @@
+     /* subrooms */
+     for (subindex = 0; subindex < nsubrooms; subindex++)
+ #ifdef SPECIALIZATION
+-        topologize(croom->sbrooms[subindex], (boolean) (rtype != OROOM));
++        topologize(ROOM_CHILD(croom, subindex), (boolean) (rtype != OROOM));
+ #else
+-        topologize(croom->sbrooms[subindex]);
++        topologize(ROOM_CHILD(croom, subindex));
+ #endif
+ }
+ 
+--- a/src/mkroom.c
++++ b/src/mkroom.c
+@@ -16,6 +16,7 @@
+  */
+ 
+ #include "hack.h"
++#include <stddef.h>
+ 
+ STATIC_DCL boolean FDECL(isbig, (struct mkroom *));
+ STATIC_DCL struct mkroom *FDECL(pick_room, (BOOLEAN_P));
+@@ -696,7 +697,7 @@
+         if (IS_WALL(levl[c->x][c->y].typ))
+             continue;
+         for (i = 0; i < croom->nsubrooms; i++)
+-            if (inside_room(croom->sbrooms[i], c->x, c->y))
++            if (inside_room(ROOM_CHILD(croom, i), c->x, c->y))
+                 goto you_lose;
+         break;
+     you_lose:
+@@ -791,6 +792,11 @@
+         return (struct permonst *) 0;
+ }
+ 
++/* Serialize only the thirteen byte-sized room fields. Child links are
++ * reconstructed from recursive order, and residents are restored separately. */
++#define ROOM_DISK_BYTES offsetof(struct mkroom, sbrooms)
++typedef char room_disk_fields_are_bytes[(ROOM_DISK_BYTES == 13) ? 1 : -1];
++
+ /*
+  * save_room : A recursive function that saves a room and its subrooms
+  * (if any).
+@@ -801,15 +807,9 @@
+ struct mkroom *r;
+ {
+     short i;
+-
+-    /*
+-     * Well, I really should write only useful information instead
+-     * of writing the whole structure. That is I should not write
+-     * the subrooms pointers, but who cares ?
+-     */
+-    bwrite(fd, (genericptr_t) r, sizeof (struct mkroom));
++    bwrite(fd, (genericptr_t) r, ROOM_DISK_BYTES);
+     for (i = 0; i < r->nsubrooms; i++)
+-        save_room(fd, r->sbrooms[i]);
++        save_room(fd, ROOM_CHILD(r, i));
+ }
+ 
+ /*
+@@ -832,13 +832,17 @@
+ int fd;
+ struct mkroom *r;
+ {
+-    short i;
+-
+-    mread(fd, (genericptr_t) r, sizeof(struct mkroom));
++    short i, child;
++    memset(r, 0, sizeof *r);
++    mread(fd, (genericptr_t) r, ROOM_DISK_BYTES);
++    if (r->nsubrooms < 0 || r->nsubrooms > MAX_SUBROOMS)
++        panic("invalid saved subroom count");
+     for (i = 0; i < r->nsubrooms; i++) {
+-        r->sbrooms[i] = &subrooms[nsubroom];
+-        rest_room(fd, &subrooms[nsubroom]);
+-        subrooms[nsubroom++].resident = (struct monst *) 0;
++        if (nsubroom >= MAXNROFROOMS)
++            panic("too many saved subrooms");
++        child = nsubroom++;
++        r->sbrooms[i] = (unsigned char) (child + 1);
++        rest_room(fd, &subrooms[child]);
+     }
+ }
+ 
+@@ -853,6 +857,8 @@
+     short i;
+ 
+     mread(fd, (genericptr_t) &nroom, sizeof(nroom));
++    if (nroom < 0 || nroom > MAXNROFROOMS)
++        panic("invalid saved room count");
+     nsubroom = 0;
+     for (i = 0; i < nroom; i++) {
+         rest_room(fd, &rooms[i]);
+--- a/src/monst.c
++++ b/src/monst.c
+@@ -101,7 +101,7 @@
+  */
+ 
+ #ifndef SPLITMON_2
+-NEARDATA struct permonst mons[] = {
++NEARDATA const struct permonst mons[] = {
+     /*
+      * ants
+      */
+--- a/src/options.c
++++ b/src/options.c
+@@ -465,7 +465,7 @@
+ 
+ extern char configfile[]; /* for messages */
+ 
+-extern struct symparse loadsyms[];
++extern const struct symparse loadsyms[];
+ static boolean need_redraw; /* for doset() */
+ 
+ #if defined(TOS) && defined(TEXTCOLOR)
+@@ -6125,7 +6125,7 @@
+ {
+     int val;
+     char *op, *symname, *strval;
+-    struct symparse *symp;
++    const struct symparse *symp;
+ 
+     if ((op = index(opts, ',')) != 0) {
+         *op++ = 0;
+@@ -6160,13 +6160,13 @@
+     return TRUE;
+ }
+ 
+-struct symparse *
++const struct symparse *
+ match_sym(buf)
+ char *buf;
+ {
+     size_t len = strlen(buf);
+     const char *p = index(buf, ':'), *q = index(buf, '=');
+-    struct symparse *sp = loadsyms;
++    const struct symparse *sp = loadsyms;
+ 
+     if (!p || (q && q < p))
+         p = q;
+@@ -6182,7 +6182,7 @@
+             return sp;
+         sp++;
+     }
+-    return (struct symparse *) 0;
++    return (const struct symparse *) 0;
+ }
+ 
+ int
+--- a/src/questpgr.c
++++ b/src/questpgr.c
+@@ -136,8 +136,11 @@
+ 
+     if (!qt_list.common || !qt_list.chrole)
+         impossible("load_qtlist: cannot load quest text.");
++
+     dump_qtlist();
+-    return; /* no ***DON'T*** close the msg_file */
++    (void) dlb_fclose(msg_file); msg_file = 0;
++
++    return;
+ }
+ 
+ /* called at program exit */
+@@ -609,6 +612,9 @@
+         return;
+     }
+ 
++    msg_file = dlb_fopen(QTEXT_FILE, RDBMODE);
++    if (!msg_file) panic("cannot open quest text");
++
+     (void) dlb_fseek(msg_file, qt_msg->offset, SEEK_SET);
+     if (qt_msg->delivery == 'p')
+         deliver_by_pline(qt_msg);
+@@ -616,6 +622,8 @@
+         deliver_by_window(qt_msg, NHW_MENU);
+     else
+         deliver_by_window(qt_msg, NHW_TEXT);
++    (void) dlb_fclose(msg_file); msg_file = 0;
++
+     return;
+ }
+ 
+@@ -644,11 +652,16 @@
+         return;
+     }
+ 
++    msg_file = dlb_fopen(QTEXT_FILE, RDBMODE);
++    if (!msg_file) panic("cannot open quest text");
++
+     (void) dlb_fseek(msg_file, qt_msg->offset, SEEK_SET);
+     if (qt_msg->delivery == 'p' && strcmp(windowprocs.name, "X11"))
+         deliver_by_pline(qt_msg);
+     else
+         deliver_by_window(qt_msg, NHW_TEXT);
++    (void) dlb_fclose(msg_file); msg_file = 0;
++
+     return;
+ }
+ 
+--- a/src/restore.c
++++ b/src/restore.c
+@@ -802,12 +802,12 @@
+ register int fd;
+ {
+     unsigned int stuckid = 0, steedid = 0; /* not a register */
+-    xchar ltmp;
+-    int rtmp;
+     struct obj *otmp;
+ 
+     restoring = TRUE;
++
+     get_plname_from_file(fd, plname);
++    nh_checkpoint_read(fd, 1);
+     getlev(fd, 0, (xchar) 0, FALSE);
+     if (!restgamestate(fd, &stuckid, &steedid)) {
+         display_nhwindow(WIN_MESSAGE, TRUE);
+@@ -817,65 +817,32 @@
+         restoring = FALSE;
+         return 0;
+     }
++
+     restlevelstate(stuckid, steedid);
+-#ifdef INSURANCE
+-    savestateinlock();
+-#endif
+-    rtmp = restlevelfile(fd, ledger_no(&u.uz));
+-    if (rtmp < 2)
+-        return rtmp; /* dorecover called recursively */
+-
+-    /* these pointers won't be valid while we're processing the
+-     * other levels, but they'll be reset again by restlevelstate()
+-     * afterwards, and in the meantime at least u.usteed may mislead
+-     * place_monster() on other levels
+-     */
++    /* Release the first current-level read without writing another copy.
++     * Global timers/lights are retained by FREE_SAVE's level-only teardown. */
++    savelev(-1, ledger_no(&u.uz), FREE_SAVE);
+     u.ustuck = (struct monst *) 0;
+     u.usteed = (struct monst *) 0;
+ 
+-#ifdef MICRO
+-#ifdef AMII_GRAPHICS
++    /* Fail before gameplay if a checkpoint's required sidecar is missing.
++     * This scan opens files only; restore never recreates the cached dungeon. */
+     {
+-        extern struct window_procs amii_procs;
+-        if (WINDOWPORT("amii") {
+-            extern winid WIN_BASE;
+-            clear_nhwindow(WIN_BASE); /* hack until there's a hook for this */
+-        }
+-    }
+-#else
+-        clear_nhwindow(WIN_MAP);
+-#endif
+-    clear_nhwindow(WIN_MESSAGE);
+-    You("return to level %d in %s%s.", depth(&u.uz),
+-        dungeons[u.uz.dnum].dname,
+-        flags.debug ? " while in debug mode"
+-                    : flags.explore ? " while in explore mode" : "");
+-    curs(WIN_MAP, 1, 1);
+-    dotcnt = 0;
+-    dotrow = 2;
+-    if (!WINDOWPORT("X11"))
+-        putstr(WIN_MAP, 0, "Restoring:");
+-#endif
+-    restoreprocs.mread_flags = 1; /* return despite error */
+-    while (1) {
+-        mread(fd, (genericptr_t) &ltmp, sizeof ltmp);
+-        if (restoreprocs.mread_flags == -1)
+-            break;
+-        getlev(fd, 0, ltmp, FALSE);
+-#ifdef MICRO
+-        curs(WIN_MAP, 1 + dotcnt++, dotrow);
+-        if (dotcnt >= (COLNO - 1)) {
+-            dotrow++;
+-            dotcnt = 0;
+-        }
+-        if (!WINDOWPORT("X11")) {
+-            putstr(WIN_MAP, 0, ".");
+-        }
+-        mark_synch();
+-#endif
+-        rtmp = restlevelfile(fd, ltmp);
+-        if (rtmp < 2)
+-            return rtmp; /* dorecover called recursively */
++        int i, checkfd;
++        struct stat st;
++        for (i = 1; i <= maxledgerno(); ++i) {
++            if (i == ledger_no(&u.uz)
++                || !(level_info[i].flags & LFILE_EXISTS))
++                continue;
++            checkfd = open_levelfile(i, (char *) 0);
++            if (checkfd < 0)
++                panic("missing checkpoint level %d", i);
++            if (fstat(checkfd, &st) < 0 || st.st_size <= 0) {
++                (void) nhclose(checkfd);
++                panic("empty checkpoint level %d", i);
++            }
++            (void) nhclose(checkfd);
++        }
+     }
+     restoreprocs.mread_flags = 0;
+ 
+@@ -884,8 +851,13 @@
+ #else
+     (void) lseek(fd, (off_t) 0, 0);
+ #endif
++
++    load_qtlist(); /* role is restored; level entities are currently unloaded */
++
++
+     (void) validate(fd, (char *) 0); /* skip version and savefile info */
+     get_plname_from_file(fd, plname);
++    nh_checkpoint_read(fd, 0);
+ 
+     getlev(fd, 0, (xchar) 0, FALSE);
+     (void) nhclose(fd);
+@@ -898,8 +870,10 @@
+     restlevelstate(stuckid, steedid);
+     program_state.something_worth_saving = 1; /* useful data now exists */
+ 
+-    if (!wizard && !discover)
+-        (void) delete_savefile();
++    /* Exactly one resumable state: consume the companion even in wizard mode.
++     * Cached levels remain the live game's backing storage. */
++    delete_levelfile(ledger_no(&u.uz));
++    (void) delete_savefile();
+     if (Is_rogue_level(&u.uz))
+         assign_graphics(ROGUESET);
+ #ifdef USE_TILES
+@@ -928,7 +902,7 @@
+      */
+     inven_inuse(FALSE);
+ 
+-    load_qtlist(); /* re-load the quest text info */
++    /* Quest indexes were loaded before the final level read. */
+     /* Set up the vision internals, after levl[] data is loaded
+        but before docrt(). */
+     reglyph_darkroom();
+@@ -1048,6 +1022,10 @@
+ 
+     /* First some sanity checks */
+     mread(fd, (genericptr_t) &hpid, sizeof(hpid));
++    /* The verified companion establishes the retained dungeon's owner.
++     * Ordinary level loads still enforce both owner and ledger checks. */
++    if (restoring && !ghostly && !pid)
++        nh_checkpoint_owner(hpid);
+ /* CHECK:  This may prevent restoration */
+ #ifdef TOS
+     mread(fd, (genericptr_t) &tlev, sizeof(tlev));
+@@ -1549,69 +1527,136 @@
+ }
+ 
+ #ifdef ZEROCOMP
++/* pico-bare: Tamp codec, matching the save side (src/save.c).  Its output is
++ * then zero-run decoded: RLESC introduces a run of zeros whose count (one
++ * less than the run length) is the next byte. */
++#include "decompressor.h"
++
+ #define RLESC '\0' /* Leading character for run of RLESC's */
+-
+-#ifndef ZEROCOMP_BUFSIZ
+-#define ZEROCOMP_BUFSIZ BUFSZ
+-#endif
+-static NEARDATA unsigned char inbuf[ZEROCOMP_BUFSIZ];
+-static NEARDATA unsigned short inbufp = 0;
+-static NEARDATA unsigned short inbufsz = 0;
+-static NEARDATA short inrunlength = -1;
+-static NEARDATA int mreadfd;
+-
+-STATIC_OVL int
+-zerocomp_mgetc()
+-{
+-    if (inbufp >= inbufsz) {
+-        inbufsz = read(mreadfd, (genericptr_t) inbuf, sizeof inbuf);
+-        if (!inbufsz) {
+-            if (inbufp > sizeof inbuf)
+-                error("EOF on file #%d.\n", mreadfd);
+-            inbufp = 1 + sizeof inbuf; /* exactly one warning :-) */
+-            return -1;
+-        }
+-        inbufp = 0;
+-    }
+-    return inbuf[inbufp++];
+-}
++#define NHTAMP_WIN_BITS 10
++#define NHTAMP_INBUF 512
++#define NHTAMP_DSTAGE 512
++
++static TampDecompressor nhtamp_decomp;
++static unsigned char nhtamp_dwin[1U << NHTAMP_WIN_BITS];
++static unsigned char nhtamp_cin[NHTAMP_INBUF];
++static unsigned int nhtamp_cin_len, nhtamp_cin_pos;
++static unsigned char nhtamp_dstage[NHTAMP_DSTAGE];
++static unsigned int nhtamp_dstage_len, nhtamp_dstage_pos;
++static short nhtamp_inrun;
++static boolean nhtamp_dstarted;
+ 
+ STATIC_OVL void
+ zerocomp_minit()
+ {
+-    inbufsz = 0;
+-    inbufp = 0;
+-    inrunlength = -1;
++    nhtamp_cin_len = 0;
++    nhtamp_cin_pos = 0;
++    nhtamp_dstage_len = 0;
++    nhtamp_dstage_pos = 0;
++    nhtamp_inrun = -1;
++    nhtamp_dstarted = FALSE;
++}
++
++/* Read one byte of the Tamp stream, refilling its input and output stages as
++ * needed.  Returns -1 at end of file. */
++STATIC_OVL int
++nhtamp_dgetc(fd)
++int fd;
++{
++    size_t written, consumed;
++    tamp_res res;
++
++    while (nhtamp_dstage_pos >= nhtamp_dstage_len) {
++        /* Give the decoder a chance to emit from buffered bits or a pending
++         * match before refilling compressed input: reaching physical EOF does
++         * not mean the decoded output is exhausted. */
++        written = 0;
++        consumed = 0;
++        res = tamp_decompressor_decompress(&nhtamp_decomp, nhtamp_dstage,
++                                           sizeof nhtamp_dstage, &written,
++                                           nhtamp_cin + nhtamp_cin_pos,
++                                           (size_t) (nhtamp_cin_len
++                                                     - nhtamp_cin_pos),
++                                           &consumed);
++        nhtamp_cin_pos += (unsigned int) consumed;
++
++        if (res != TAMP_OK && res != TAMP_INPUT_EXHAUSTED
++            && res != TAMP_OUTPUT_FULL)
++            panic("tamp: decompression error %d", (int) res);
++
++        if (written) {
++            nhtamp_dstage_len = (unsigned int) written;
++            nhtamp_dstage_pos = 0;
++        } else if (consumed == 0) {
++            /* Nothing decoded and nothing consumed: compact any unconsumed
++             * tail, then refill.  Hitting EOF here means the stream is drained
++             * as well as exhausted. */
++            if (nhtamp_cin_pos > 0) {
++                unsigned int keep = nhtamp_cin_len - nhtamp_cin_pos;
++
++                memmove(nhtamp_cin, nhtamp_cin + nhtamp_cin_pos, keep);
++                nhtamp_cin_len = keep;
++                nhtamp_cin_pos = 0;
++            }
++            if (nhtamp_cin_len == sizeof nhtamp_cin)
++                panic("tamp: input buffer too small");
++            {
++                int r = read(fd, (genericptr_t) (nhtamp_cin + nhtamp_cin_len),
++                             (unsigned) (sizeof nhtamp_cin - nhtamp_cin_len));
++
++                if (r <= 0)
++                    return -1;
++                nhtamp_cin_len += (unsigned int) r;
++            }
++        }
++    }
++    return nhtamp_dstage[nhtamp_dstage_pos++];
+ }
+ 
+ STATIC_OVL void
+ zerocomp_mread(fd, buf, len)
+ int fd;
+ genericptr_t buf;
+-register unsigned len;
+-{
+-    /*register int readlen = 0;*/
++unsigned int len;
++{
++    unsigned char *out = (unsigned char *) buf;
++    unsigned int produced = 0;
++
+     if (fd < 0)
+         error("Restore error; mread attempting to read file %d.", fd);
+-    mreadfd = fd;
+-    while (len--) {
+-        if (inrunlength > 0) {
+-            inrunlength--;
+-            *(*((char **) &buf))++ = '\0';
+-        } else {
+-            register short ch = zerocomp_mgetc();
+-            if (ch < 0) {
+-                restoreprocs.mread_flags = -1;
+-                return;
+-            }
+-            if ((*(*(char **) &buf)++ = (char) ch) == RLESC) {
+-                inrunlength = zerocomp_mgetc();
+-            }
+-        }
+-        /*readlen++;*/
++
++    if (!nhtamp_dstarted) {
++        if (tamp_decompressor_init(&nhtamp_decomp, (TampConf *) 0, nhtamp_dwin,
++                                   NHTAMP_WIN_BITS) != TAMP_OK)
++            panic("tamp: decompressor init failed");
++        nhtamp_cin_len = 0;
++        nhtamp_cin_pos = 0;
++        nhtamp_dstage_len = 0;
++        nhtamp_dstage_pos = 0;
++        nhtamp_inrun = -1;
++        nhtamp_dstarted = TRUE;
++    }
++
++    while (produced < len) {
++        int ch;
++
++        if (nhtamp_inrun > 0) { /* still inside a run of zeros */
++            nhtamp_inrun--;
++            out[produced++] = '\0';
++            continue;
++        }
++        ch = nhtamp_dgetc(fd);
++        if (ch < 0) {
++            restoreprocs.mread_flags = -1;
++            return;
++        }
++        out[produced++] = (char) ch;
++        if (ch == (int) RLESC) /* run of zeros: read its count */
++            nhtamp_inrun = (short) nhtamp_dgetc(fd);
+     }
+ }
+ #endif /* ZEROCOMP */
++
+ 
+ STATIC_OVL void
+ def_minit()
+--- a/src/save.c
++++ b/src/save.c
+@@ -4,6 +4,7 @@
+ /* NetHack may be freely redistributed.  See license for details. */
+ 
+ #include "hack.h"
++#include <errno.h>
+ #include "lev.h"
+ 
+ #ifndef NO_SIGNAL
+@@ -107,10 +108,7 @@
+ dosave0()
+ {
+     const char *fq_save;
+-    register int fd, ofd;
+-    xchar ltmp;
+-    d_level uz_save;
+-    char whynot[BUFSZ];
++    register int fd;
+ 
+     /* we may get here via hangup signal, in which case we want to fix up
+        a few of things before saving so that they won't be restored in
+@@ -155,7 +153,9 @@
+ 
+     HUP mark_synch(); /* flush any buffered screen output */
+ 
+-    fd = create_savefile();
++    /* An incomplete write is never offered as a saved game. The active game
++     * has consumed its previous companion, so this is a single checkpoint. */
++    fd = creat(fqname("0game.tmp", SAVEPREFIX, 2), FCMASK);
+     if (fd < 0) {
+         HUP pline("Cannot open save file.");
+         (void) delete_savefile(); /* ab@unido */
+@@ -212,61 +212,22 @@
+     store_version(fd);
+     store_savefileinfo(fd);
+     store_plname_in_file(fd);
++    bufoff(fd);
++    nh_checkpoint_write(fd, ledger_no(&u.uz));
++    bufon(fd);
+     ustuck_id = (u.ustuck ? u.ustuck->m_id : 0);
+     usteed_id = (u.usteed ? u.usteed->m_id : 0);
+     savelev(fd, ledger_no(&u.uz), WRITE_SAVE | FREE_SAVE);
+     savegamestate(fd, WRITE_SAVE | FREE_SAVE);
+ 
+-    /* While copying level files around, zero out u.uz to keep
+-     * parts of the restore code from completely initializing all
+-     * in-core data structures, since all we're doing is copying.
+-     * This also avoids at least one nasty core dump.
+-     */
+-    uz_save = u.uz;
+-    u.uz.dnum = u.uz.dlevel = 0;
+-    /* these pointers are no longer valid, and at least u.usteed
+-     * may mislead place_monster() on other levels
+-     */
+-    u.ustuck = (struct monst *) 0;
+-    u.usteed = (struct monst *) 0;
+-
+-    for (ltmp = (xchar) 1; ltmp <= maxledgerno(); ltmp++) {
+-        if (ltmp == ledger_no(&uz_save))
+-            continue;
+-        if (!(level_info[ltmp].flags & LFILE_EXISTS))
+-            continue;
+-#ifdef MICRO
+-        curs(WIN_MAP, 1 + dotcnt++, dotrow);
+-        if (dotcnt >= (COLNO - 1)) {
+-            dotrow++;
+-            dotcnt = 0;
+-        }
+-        if (!WINDOWPORT("X11")) {
+-            putstr(WIN_MAP, 0, ".");
+-        }
+-        mark_synch();
+-#endif
+-        ofd = open_levelfile(ltmp, whynot);
+-        if (ofd < 0) {
+-            HUP pline1(whynot);
+-            (void) nhclose(fd);
+-            (void) delete_savefile();
+-            HUP Strcpy(killer.name, whynot);
+-            HUP done(TRICKED);
+-            return 0;
+-        }
+-        minit(); /* ZEROCOMP */
+-        getlev(ofd, hackpid, ltmp, FALSE);
+-        (void) nhclose(ofd);
+-        bwrite(fd, (genericptr_t) &ltmp, sizeof ltmp); /* level number*/
+-        savelev(fd, ltmp, WRITE_SAVE | FREE_SAVE);     /* actual level*/
+-        delete_levelfile(ltmp);
+-    }
++    /* Other levels already exist as compressed files. They are part of this
++     * single checkpoint, not copied into and back out of the companion file. */
+     bclose(fd);
+-
+-    u.uz = uz_save;
+-
+-    /* get rid of current level --jgm */
++    if (unlink(fq_save) < 0 && errno != ENOENT)
++        panic("cannot replace checkpoint (%d)", errno);
++    if (rename(fqname("0game.tmp", SAVEPREFIX, 2), fq_save) < 0)
++        panic("cannot commit checkpoint (%d)", errno);
++    /* The current level lives in the companion file; remove its stale cache. */
+     delete_levelfile(ledger_no(&u.uz));
+     delete_levelfile(0);
+     nh_compress(fq_save);
+@@ -776,133 +737,195 @@
  }
  
  #ifdef ZEROCOMP
@@ -170,10 +1246,44 @@
 + * cuts 9-20% off the Tamp stream on real levels, because Tamp caps its match
 + * length, so a long zero run costs it several tokens.
   */
-+#include "compressor.h"
- 
+-
 -#define RLESC '\0' /* Leading character for run of LRESC's */
 -#define flushoutrun(ln) (zerocomp_bputc(RLESC), zerocomp_bputc(ln), ln = -1)
+-
+-#ifndef ZEROCOMP_BUFSIZ
+-#define ZEROCOMP_BUFSIZ BUFSZ
+-#endif
+-static NEARDATA unsigned char outbuf[ZEROCOMP_BUFSIZ];
+-static NEARDATA unsigned short outbufp = 0;
+-static NEARDATA short outrunlength = -1;
+-static NEARDATA int bwritefd;
+-static NEARDATA boolean compressing = FALSE;
+-
+-/*dbg()
+-{
+-    HUP printf("outbufp %d outrunlength %d\n", outbufp,outrunlength);
+-}*/
+-
+-STATIC_OVL void
+-zerocomp_bputc(c)
+-int c;
+-{
+-#ifdef MFLOPPY
+-    bytes_counted++;
+-    if (count_only)
+-        return;
+-#endif
+-    if (outbufp >= sizeof outbuf) {
+-        (void) write(bwritefd, outbuf, sizeof outbuf);
+-        outbufp = 0;
+-    }
+-    outbuf[outbufp++] = (unsigned char) c;
+-}
+-
+-/*ARGSUSED*/
+-void STATIC_OVL
++#include "compressor.h"
++
 +#define RLESC '\0' /* Leading character for run of RLESC's */
 +#define NHTAMP_WIN_BITS 10
 +#define NHTAMP_OUTBUF 512
@@ -189,15 +1299,7 @@
 +static int nhtamp_cfd;
 +static boolean nhtamp_cstarted;
 +static boolean nhtamp_compressing;
- 
--#ifndef ZEROCOMP_BUFSIZ
--#define ZEROCOMP_BUFSIZ BUFSZ
--#endif
--static NEARDATA unsigned char outbuf[ZEROCOMP_BUFSIZ];
--static NEARDATA unsigned short outbufp = 0;
--static NEARDATA short outrunlength = -1;
--static NEARDATA int bwritefd;
--static NEARDATA boolean compressing = FALSE;
++
 +STATIC_OVL void
 +nhtamp_cflushout()
 +{
@@ -263,59 +1365,45 @@
 +        nhtamp_stage_len = 0;
 +    }
 +}
- 
--/*dbg()
++
 +/* Terminate a pending zero run, emitting RLESC and the run count. */
 +STATIC_OVL void
 +nhtamp_endrun()
- {
--    HUP printf("outbufp %d outrunlength %d\n", outbufp,outrunlength);
--}*/
++{
 +    if (nhtamp_outrun >= 0) {
 +        nhtamp_emit((unsigned char) RLESC);
 +        nhtamp_emit((unsigned char) nhtamp_outrun);
 +        nhtamp_outrun = -1;
 +    }
 +}
- 
++
 +/* Push any staged RLE bytes into Tamp. */
- STATIC_OVL void
--zerocomp_bputc(c)
--int c;
++STATIC_OVL void
 +nhtamp_stage_flush()
- {
--#ifdef MFLOPPY
--    bytes_counted++;
--    if (count_only)
--        return;
--#endif
--    if (outbufp >= sizeof outbuf) {
--        (void) write(bwritefd, outbuf, sizeof outbuf);
--        outbufp = 0;
++{
 +    if (nhtamp_stage_len) {
 +        nhtamp_cfeed(nhtamp_stage, nhtamp_stage_len);
 +        nhtamp_stage_len = 0;
-     }
--    outbuf[outbufp++] = (unsigned char) c;
- }
- 
--/*ARGSUSED*/
--void STATIC_OVL
++    }
++}
++
 +STATIC_OVL void
  zerocomp_bufon(fd)
  int fd;
  {
 -    compressing = TRUE;
 -    return;
+-}
+-
+-/*ARGSUSED*/
 +    nhtamp_cfd = fd;
 +    nhtamp_compressing = TRUE;
 +    nhtamp_cstarted = FALSE;
 +    nhtamp_cout_len = 0;
 +    nhtamp_stage_len = 0;
 +    nhtamp_outrun = -1;
- }
- 
--/*ARGSUSED*/
++}
++
  STATIC_OVL void
  zerocomp_bufoff(fd)
  int fd;
@@ -327,16 +1415,17 @@
 -    outrunlength = -1;
 -    compressing = FALSE;
 -    return;
+-}
+-
+-/* flush run and buffer */
 +    (void) fd;
 +    nhtamp_compressing = FALSE;
- }
- 
--/* flush run and buffer */
++}
++
  STATIC_OVL void
  zerocomp_bflush(fd)
 -register int fd;
-+int fd;
- {
+-{
 -    bwritefd = fd;
 -    if (outrunlength >= 0) { /* flush run */
 -        flushoutrun(outrunlength);
@@ -354,8 +1443,8 @@
 -            else
 -#endif
 -                zerocomp_bclose(fd); /* panic (outbufp != 0) */
--        }
--        outbufp = 0;
++int fd;
++{
 +    if (nhtamp_compressing && nhtamp_cstarted) {
 +        unsigned char out[64];
 +        size_t written = 0;
@@ -366,34 +1455,19 @@
 +                                     TRUE);
 +        if (written)
 +            nhtamp_cput(out, written);
-     }
++    }
 +    nhtamp_cflushout();
- }
- 
- STATIC_OVL void
- zerocomp_bwrite(fd, loc, num)
- int fd;
- genericptr_t loc;
--register unsigned num;
++}
++
++STATIC_OVL void
++zerocomp_bwrite(fd, loc, num)
++int fd;
++genericptr_t loc;
 +unsigned int num;
- {
--    register unsigned char *bp = (unsigned char *) loc;
++{
 +    if (nhtamp_compressing) {
 +        const unsigned char *bp = (const unsigned char *) loc;
- 
--    if (!compressing) {
--#ifdef MFLOPPY
--        bytes_counted += num;
--        if (count_only)
--            return;
--#endif
--        if ((unsigned) write(fd, loc, num) != num) {
--#if defined(UNIX) || defined(VMS) || defined(__EMX__)
--            if (program_state.done_hup)
--                nh_terminate(EXIT_FAILURE);
--            else
--#endif
--                panic("cannot write %u bytes to file #%d", num, fd);
++
 +        if (!nhtamp_cstarted) {
 +            TampConf conf;
 +
@@ -407,9 +1481,43 @@
 +            nhtamp_cfd = fd;
 +            nhtamp_cstarted = TRUE;
          }
--    } else {
+-        outbufp = 0;
+-    }
+-}
+-
+-STATIC_OVL void
+-zerocomp_bwrite(fd, loc, num)
+-int fd;
+-genericptr_t loc;
+-register unsigned num;
+-{
+-    register unsigned char *bp = (unsigned char *) loc;
+-
+-    if (!compressing) {
+-#ifdef MFLOPPY
+-        bytes_counted += num;
+-        if (count_only)
+-            return;
+-#endif
+-        if ((unsigned) write(fd, loc, num) != num) {
+-#if defined(UNIX) || defined(VMS) || defined(__EMX__)
+-            if (program_state.done_hup)
+-                nh_terminate(EXIT_FAILURE);
+-            else
+-#endif
+-                panic("cannot write %u bytes to file #%d", num, fd);
++        for (; num; num--, bp++) {
++            if (*bp == (unsigned char) RLESC) { /* one more byte in run */
++                if (++nhtamp_outrun == 0xFF)
++                    nhtamp_endrun();
++            } else { /* end of run */
++                nhtamp_endrun();
++                nhtamp_emit(*bp);
++            }
+         }
+     } else {
 -        bwritefd = fd;
-         for (; num; num--, bp++) {
+-        for (; num; num--, bp++) {
 -            if (*bp == RLESC) { /* One more char in run */
 -                if (++outrunlength == 0xFF) {
 -                    flushoutrun(outrunlength);
@@ -419,21 +1527,14 @@
 -                    flushoutrun(outrunlength);
 -                }
 -                zerocomp_bputc(*bp);
-+            if (*bp == (unsigned char) RLESC) { /* one more byte in run */
-+                if (++nhtamp_outrun == 0xFF)
-+                    nhtamp_endrun();
-+            } else { /* end of run */
-+                nhtamp_endrun();
-+                nhtamp_emit(*bp);
-             }
-         }
-+    } else {
+-            }
+-        }
 +        if ((unsigned int) write(fd, loc, num) != num)
 +            panic("cannot write %u bytes to file #%d", num, fd);
      }
  }
  
-@@ -910,12 +972,25 @@
+@@ -910,11 +933,24 @@
  zerocomp_bclose(fd)
  int fd;
  {
@@ -456,407 +1557,467 @@
 -    return;
  }
  #endif /* ZEROCOMP */
- 
 +
+ 
  STATIC_OVL void
  savelevchn(fd, mode)
- register int fd, mode;
---- pristine/src/restore.c
-+++ edited/src/restore.c
-@@ -1549,70 +1549,137 @@
- }
- 
- #ifdef ZEROCOMP
-+/* pico-bare: Tamp codec, matching the save side (src/save.c).  Its output is
-+ * then zero-run decoded: RLESC introduces a run of zeros whose count (one
-+ * less than the run length) is the next byte. */
-+#include "decompressor.h"
-+
- #define RLESC '\0' /* Leading character for run of RLESC's */
-+#define NHTAMP_WIN_BITS 10
-+#define NHTAMP_INBUF 512
-+#define NHTAMP_DSTAGE 512
-+
-+static TampDecompressor nhtamp_decomp;
-+static unsigned char nhtamp_dwin[1U << NHTAMP_WIN_BITS];
-+static unsigned char nhtamp_cin[NHTAMP_INBUF];
-+static unsigned int nhtamp_cin_len, nhtamp_cin_pos;
-+static unsigned char nhtamp_dstage[NHTAMP_DSTAGE];
-+static unsigned int nhtamp_dstage_len, nhtamp_dstage_pos;
-+static short nhtamp_inrun;
-+static boolean nhtamp_dstarted;
- 
--#ifndef ZEROCOMP_BUFSIZ
--#define ZEROCOMP_BUFSIZ BUFSZ
--#endif
--static NEARDATA unsigned char inbuf[ZEROCOMP_BUFSIZ];
--static NEARDATA unsigned short inbufp = 0;
--static NEARDATA unsigned short inbufsz = 0;
--static NEARDATA short inrunlength = -1;
--static NEARDATA int mreadfd;
-+STATIC_OVL void
-+zerocomp_minit()
-+{
-+    nhtamp_cin_len = 0;
-+    nhtamp_cin_pos = 0;
-+    nhtamp_dstage_len = 0;
-+    nhtamp_dstage_pos = 0;
-+    nhtamp_inrun = -1;
-+    nhtamp_dstarted = FALSE;
-+}
- 
-+/* Read one byte of the Tamp stream, refilling its input and output stages as
-+ * needed.  Returns -1 at end of file. */
- STATIC_OVL int
--zerocomp_mgetc()
-+nhtamp_dgetc(fd)
-+int fd;
- {
--    if (inbufp >= inbufsz) {
--        inbufsz = read(mreadfd, (genericptr_t) inbuf, sizeof inbuf);
--        if (!inbufsz) {
--            if (inbufp > sizeof inbuf)
--                error("EOF on file #%d.\n", mreadfd);
--            inbufp = 1 + sizeof inbuf; /* exactly one warning :-) */
--            return -1;
-+    size_t written, consumed;
-+    tamp_res res;
-+
-+    while (nhtamp_dstage_pos >= nhtamp_dstage_len) {
-+        /* Give the decoder a chance to emit from buffered bits or a pending
-+         * match before refilling compressed input: reaching physical EOF does
-+         * not mean the decoded output is exhausted. */
-+        written = 0;
-+        consumed = 0;
-+        res = tamp_decompressor_decompress(&nhtamp_decomp, nhtamp_dstage,
-+                                           sizeof nhtamp_dstage, &written,
-+                                           nhtamp_cin + nhtamp_cin_pos,
-+                                           (size_t) (nhtamp_cin_len
-+                                                     - nhtamp_cin_pos),
-+                                           &consumed);
-+        nhtamp_cin_pos += (unsigned int) consumed;
-+
-+        if (res != TAMP_OK && res != TAMP_INPUT_EXHAUSTED
-+            && res != TAMP_OUTPUT_FULL)
-+            panic("tamp: decompression error %d", (int) res);
-+
-+        if (written) {
-+            nhtamp_dstage_len = (unsigned int) written;
-+            nhtamp_dstage_pos = 0;
-+        } else if (consumed == 0) {
-+            /* Nothing decoded and nothing consumed: compact any unconsumed
-+             * tail, then refill.  Hitting EOF here means the stream is drained
-+             * as well as exhausted. */
-+            if (nhtamp_cin_pos > 0) {
-+                unsigned int keep = nhtamp_cin_len - nhtamp_cin_pos;
-+
-+                memmove(nhtamp_cin, nhtamp_cin + nhtamp_cin_pos, keep);
-+                nhtamp_cin_len = keep;
-+                nhtamp_cin_pos = 0;
-+            }
-+            if (nhtamp_cin_len == sizeof nhtamp_cin)
-+                panic("tamp: input buffer too small");
-+            {
-+                int r = read(fd, (genericptr_t) (nhtamp_cin + nhtamp_cin_len),
-+                             (unsigned) (sizeof nhtamp_cin - nhtamp_cin_len));
-+
-+                if (r <= 0)
-+                    return -1;
-+                nhtamp_cin_len += (unsigned int) r;
-+            }
-         }
--        inbufp = 0;
-     }
--    return inbuf[inbufp++];
--}
--
--STATIC_OVL void
--zerocomp_minit()
--{
--    inbufsz = 0;
--    inbufp = 0;
--    inrunlength = -1;
-+    return nhtamp_dstage[nhtamp_dstage_pos++];
- }
- 
- STATIC_OVL void
- zerocomp_mread(fd, buf, len)
- int fd;
- genericptr_t buf;
--register unsigned len;
-+unsigned int len;
- {
--    /*register int readlen = 0;*/
-+    unsigned char *out = (unsigned char *) buf;
-+    unsigned int produced = 0;
-+
-     if (fd < 0)
-         error("Restore error; mread attempting to read file %d.", fd);
--    mreadfd = fd;
--    while (len--) {
--        if (inrunlength > 0) {
--            inrunlength--;
--            *(*((char **) &buf))++ = '\0';
--        } else {
--            register short ch = zerocomp_mgetc();
--            if (ch < 0) {
--                restoreprocs.mread_flags = -1;
--                return;
--            }
--            if ((*(*(char **) &buf)++ = (char) ch) == RLESC) {
--                inrunlength = zerocomp_mgetc();
--            }
-+
-+    if (!nhtamp_dstarted) {
-+        if (tamp_decompressor_init(&nhtamp_decomp, (TampConf *) 0, nhtamp_dwin,
-+                                   NHTAMP_WIN_BITS) != TAMP_OK)
-+            panic("tamp: decompressor init failed");
-+        nhtamp_cin_len = 0;
-+        nhtamp_cin_pos = 0;
-+        nhtamp_dstage_len = 0;
-+        nhtamp_dstage_pos = 0;
-+        nhtamp_inrun = -1;
-+        nhtamp_dstarted = TRUE;
-+    }
-+
-+    while (produced < len) {
-+        int ch;
-+
-+        if (nhtamp_inrun > 0) { /* still inside a run of zeros */
-+            nhtamp_inrun--;
-+            out[produced++] = '\0';
-+            continue;
-         }
--        /*readlen++;*/
-+        ch = nhtamp_dgetc(fd);
-+        if (ch < 0) {
-+            restoreprocs.mread_flags = -1;
-+            return;
-+        }
-+        out[produced++] = (char) ch;
-+        if (ch == (int) RLESC) /* run of zeros: read its count */
-+            nhtamp_inrun = (short) nhtamp_dgetc(fd);
-     }
- }
- #endif /* ZEROCOMP */
- 
-+
- STATIC_OVL void
- def_minit()
- {
---- pristine/include/permonst.h
-+++ edited/include/permonst.h
-@@ -64,7 +64,7 @@
- #endif
- };
- 
--extern NEARDATA struct permonst mons[]; /* the master list of monster types */
-+extern NEARDATA const struct permonst mons[]; /* the master list of monster types */
- 
- #define VERY_SLOW 3
- #define SLOW_SPEED 9
---- pristine/src/monst.c
-+++ edited/src/monst.c
-@@ -101,7 +101,7 @@
+--- a/src/sp_lev.c
++++ b/src/sp_lev.c
+@@ -10,6 +10,7 @@
   */
  
- #ifndef SPLITMON_2
--NEARDATA struct permonst mons[] = {
-+NEARDATA const struct permonst mons[] = {
-     /*
-      * ants
-      */
---- pristine/include/func_tab.h
-+++ edited/include/func_tab.h
-@@ -21,6 +21,6 @@
-     const char *f_text;
- };
+ #include "hack.h"
++#include <limits.h>
+ #include "dlb.h"
+ #include "sp_lev.h"
  
--extern struct ext_func_tab extcmdlist[];
-+extern const struct ext_func_tab extcmdlist[];
- 
- #endif /* FUNC_TAB_H */
---- pristine/src/cmd.c
-+++ edited/src/cmd.c
-@@ -3352,7 +3352,7 @@
+@@ -86,8 +87,8 @@
+ STATIC_DCL void FDECL(wallify_map, (int, int, int, int));
+ STATIC_DCL void FDECL(maze1xy, (coord *, int));
+ STATIC_DCL void NDECL(fill_empty_maze);
+-STATIC_DCL boolean FDECL(sp_level_loader, (dlb *, sp_lev *));
+-STATIC_DCL boolean FDECL(sp_level_free, (sp_lev *));
++STATIC_DCL boolean FDECL(sp_level_loader, (dlb *, sp_lev *, genericptr_t *));
++STATIC_DCL boolean FDECL(sp_level_free, (sp_lev *, genericptr_t));
+ STATIC_DCL void FDECL(splev_initlev, (lev_init *));
+ STATIC_DCL struct sp_frame *FDECL(frame_new, (long));
+ STATIC_DCL void FDECL(frame_del, (struct sp_frame *));
+@@ -790,7 +791,7 @@
+                 for (tmpi = 0; tmpi < nroom; tmpi++) {
+                     maybe_add_door(x, y, &rooms[tmpi]);
+                     for (m = 0; m < rooms[tmpi].nsubrooms; m++) {
+-                        maybe_add_door(x, y, rooms[tmpi].sbrooms[m]);
++                        maybe_add_door(x, y, ROOM_CHILD(&rooms[tmpi], m));
+                     }
+                 }
+             }
+@@ -805,8 +806,8 @@
+         if (rooms[tmpi].needfill)
+             fill_room(&rooms[tmpi], (rooms[tmpi].needfill == 2));
+         for (m = 0; m < rooms[tmpi].nsubrooms; m++)
+-            if (rooms[tmpi].sbrooms[m]->needfill)
+-                fill_room(rooms[tmpi].sbrooms[m], FALSE);
++            if (ROOM_CHILD(&rooms[tmpi], m)->needfill)
++                fill_room(ROOM_CHILD(&rooms[tmpi], m), FALSE);
+     }
  }
  
- /* ordered by command name */
--struct ext_func_tab extcmdlist[] = {
-+const struct ext_func_tab extcmdlist[] = {
-     { '#', "#", "perform an extended command",
-             doextcmd, IFBURIED | GENERALCMD },
-     { M('?'), "?", "list all extended commands",
---- pristine/src/drawing.c
-+++ edited/src/drawing.c
-@@ -548,7 +548,7 @@
- 
- void
- update_ov_primary_symset(symp, val)
--struct symparse *symp;
-+const struct symparse *symp;
- int val;
- {
-     ov_primary_syms[symp->idx] = val;
-@@ -556,7 +556,7 @@
- 
- void
- update_ov_rogue_symset(symp, val)
--struct symparse *symp;
-+const struct symparse *symp;
- int val;
- {
-     ov_rogue_syms[symp->idx] = val;
-@@ -564,7 +564,7 @@
- 
- void
- update_primary_symset(symp, val)
--struct symparse *symp;
-+const struct symparse *symp;
- int val;
- {
-     primary_syms[symp->idx] = val;
-@@ -572,7 +572,7 @@
- 
- void
- update_rogue_symset(symp, val)
--struct symparse *symp;
-+const struct symparse *symp;
- int val;
- {
-     rogue_syms[symp->idx] = val;
-@@ -632,7 +632,7 @@
-     "primary", "rogue", (const char *) 0,
- };
- 
--struct symparse loadsyms[] = {
-+const struct symparse loadsyms[] = {
-     { SYM_CONTROL, 0, "start" },
-     { SYM_CONTROL, 0, "begin" },
-     { SYM_CONTROL, 1, "finish" },
---- pristine/src/files.c
-+++ edited/src/files.c
-@@ -3235,6 +3235,12 @@
- {
-     FILE *fp;
- 
-+    /* The symbol set is in the data librarian now (compressed); ask the
-+     * librarian for a stdio FILE* over the decompressed stream.  Fall back to
-+     * the filesystem for a build that ships "symbols" as a plain file. */
-+    if ((fp = nhdlb_memopen(SYMBOLS)) != 0)
-+        return fp;
+@@ -2670,96 +2671,98 @@
+ /*
+  * special level loader
+  */
++static void
++nh_sp_read(dlb *fd, genericptr_t dst, size_t bytes)
++{
++    if (bytes > INT_MAX || dlb_fread(dst, 1, (int) bytes, fd) != (int) bytes)
++        panic("truncated special-level operand");
++}
 +
-     fp = fopen_datafile(SYMBOLS, "r",
- #ifdef WIN32
-                             SYSCONFPREFIX
-@@ -3311,7 +3317,7 @@
- int which_set;
- {
-     int val, i;
--    struct symparse *symp;
-+    const struct symparse *symp;
-     char *bufp, *commentp, *altp;
- 
-     if (strlen(buf) >= BUFSZ)
---- pristine/src/options.c
-+++ edited/src/options.c
-@@ -465,7 +465,7 @@
- 
- extern char configfile[]; /* for messages */
- 
--extern struct symparse loadsyms[];
-+extern const struct symparse loadsyms[];
- static boolean need_redraw; /* for doset() */
- 
- #if defined(TOS) && defined(TEXTCOLOR)
-@@ -6125,7 +6125,7 @@
- {
-     int val;
-     char *op, *symname, *strval;
--    struct symparse *symp;
-+    const struct symparse *symp;
- 
-     if ((op = index(opts, ',')) != 0) {
-         *op++ = 0;
-@@ -6160,13 +6160,13 @@
+ STATIC_OVL boolean
+-sp_level_loader(fd, lvl)
++sp_level_loader(fd, lvl, arena_out)
+ dlb *fd;
+ sp_lev *lvl;
+-{
+-    long n_opcode = 0;
+-    struct opvar *opdat;
+-    int opcode;
+-
+-    Fread((genericptr_t) & (lvl->n_opcodes), 1, sizeof(lvl->n_opcodes), fd);
+-    lvl->opcodes = (_opcode *) alloc(sizeof(_opcode) * (lvl->n_opcodes));
+-
+-    while (n_opcode < lvl->n_opcodes) {
+-        Fread((genericptr_t) &lvl->opcodes[n_opcode].opcode, 1,
+-              sizeof(lvl->opcodes[n_opcode].opcode), fd);
+-        opcode = lvl->opcodes[n_opcode].opcode;
+-
+-        opdat = NULL;
+-
++genericptr_t *arena_out;
++{
++    long n_opcode, start;
++    size_t pushes = 0, strings = 0, arena_bytes;
++    int opcode, nsize;
++    xchar type;
++    long value;
++    struct opvar *next;
++    char *text;
++
++    *arena_out = NULL;
++    nh_sp_read(fd, &lvl->n_opcodes, sizeof lvl->n_opcodes);
++    if (lvl->n_opcodes < 0 || (size_t) lvl->n_opcodes > UINT_MAX / sizeof(_opcode))
++        panic("invalid special-level opcode count");
++    start = dlb_ftell(fd);
++    /* Count storage without retaining operands, then rewind the same decoder. */
++    for (n_opcode = 0; n_opcode < lvl->n_opcodes; ++n_opcode) {
++        nh_sp_read(fd, &opcode, sizeof opcode);
+         if (opcode < SPO_NULL || opcode >= MAX_SP_OPCODES)
+-            panic("sp_level_loader: impossible opcode %i.", opcode);
+-
+-        if (opcode == SPO_PUSH) {
+-            int nsize;
+-            struct opvar *ov = (struct opvar *) alloc(sizeof(struct opvar));
+-
+-            opdat = ov;
+-            ov->spovartyp = SPO_NULL;
+-            ov->vardata.l = 0;
+-            Fread((genericptr_t) & (ov->spovartyp), 1, sizeof(ov->spovartyp),
+-                  fd);
+-
+-            switch (ov->spovartyp) {
+-            case SPOVAR_NULL:
+-                break;
+-            case SPOVAR_COORD:
+-            case SPOVAR_REGION:
+-            case SPOVAR_MAPCHAR:
+-            case SPOVAR_MONST:
+-            case SPOVAR_OBJ:
+-            case SPOVAR_INT:
+-                Fread((genericptr_t) & (ov->vardata.l), 1,
+-                      sizeof(ov->vardata.l), fd);
+-                break;
+-            case SPOVAR_VARIABLE:
+-            case SPOVAR_STRING:
+-            case SPOVAR_SEL: {
+-                char *opd;
+-
+-                Fread((genericptr_t) &nsize, 1, sizeof(nsize), fd);
+-                opd = (char *) alloc(nsize + 1);
+-
+-                if (nsize)
+-                    Fread(opd, 1, nsize, fd);
+-                opd[nsize] = 0;
+-                ov->vardata.str = opd;
+-                break;
+-            }
+-            default:
+-                panic("sp_level_loader: unknown opvar type %i",
+-                      ov->spovartyp);
+-            }
+-        }
+-
+-        lvl->opcodes[n_opcode].opdat = opdat;
+-        n_opcode++;
+-    } /*while*/
+-
++            panic("invalid special-level opcode");
++        if (opcode != SPO_PUSH) continue;
++        ++pushes;
++        nh_sp_read(fd, &type, sizeof type);
++        switch (type) {
++        case SPOVAR_NULL: break;
++        case SPOVAR_COORD: case SPOVAR_REGION: case SPOVAR_MAPCHAR:
++        case SPOVAR_MONST: case SPOVAR_OBJ: case SPOVAR_INT:
++            nh_sp_read(fd, &value, sizeof value); break;
++        case SPOVAR_VARIABLE: case SPOVAR_STRING: case SPOVAR_SEL:
++            nh_sp_read(fd, &nsize, sizeof nsize);
++            if (nsize < 0 || (size_t)nsize + 1 > UINT_MAX - strings)
++                panic("invalid special-level string size");
++            strings += (size_t)nsize + 1;
++            if (dlb_fseek(fd, nsize, SEEK_CUR) != 0)
++                panic("truncated special-level string");
++            break;
++        default: panic("invalid special-level operand type");
++        }
++    }
++    if (pushes > (UINT_MAX - strings) / sizeof(struct opvar))
++        panic("special-level operand arena too large");
++    arena_bytes = pushes * sizeof(struct opvar) + strings;
++    if (dlb_fseek(fd, start, SEEK_SET) != 0)
++        panic("cannot rewind special level");
++    lvl->opcodes = (_opcode *)alloc(sizeof(_opcode) * lvl->n_opcodes);
++    if (arena_bytes) *arena_out = alloc(arena_bytes);
++    next = (struct opvar *)*arena_out;
++    text = *arena_out ? (char *)*arena_out + pushes * sizeof(struct opvar) : NULL;
++    for (n_opcode = 0; n_opcode < lvl->n_opcodes; ++n_opcode) {
++        nh_sp_read(fd, &lvl->opcodes[n_opcode].opcode, sizeof opcode);
++        lvl->opcodes[n_opcode].opdat = NULL;
++        if (lvl->opcodes[n_opcode].opcode != SPO_PUSH) continue;
++        lvl->opcodes[n_opcode].opdat = next;
++        next->vardata.l = 0;
++        nh_sp_read(fd, &next->spovartyp, sizeof next->spovartyp);
++        switch (next->spovartyp) {
++        case SPOVAR_NULL: break;
++        case SPOVAR_COORD: case SPOVAR_REGION: case SPOVAR_MAPCHAR:
++        case SPOVAR_MONST: case SPOVAR_OBJ: case SPOVAR_INT:
++            nh_sp_read(fd, &next->vardata.l, sizeof next->vardata.l); break;
++        case SPOVAR_VARIABLE: case SPOVAR_STRING: case SPOVAR_SEL:
++            nh_sp_read(fd, &nsize, sizeof nsize);
++            nh_sp_read(fd, text, nsize);
++            text[nsize] = 0;
++            next->vardata.str = text;
++            text += nsize + 1;
++            break;
++        default: panic("invalid special-level operand type");
++        }
++        ++next;
++    }
      return TRUE;
  }
  
--struct symparse *
-+const struct symparse *
- match_sym(buf)
- char *buf;
+-/* Frees the memory allocated for special level creation structs */
+ STATIC_OVL boolean
+-sp_level_free(lvl)
++sp_level_free(lvl, arena)
+ sp_lev *lvl;
+-{
+-    static const char nhFunc[] = "sp_level_free";
+-    long n_opcode = 0;
+-
+-    while (n_opcode < lvl->n_opcodes) {
+-        int opcode = lvl->opcodes[n_opcode].opcode;
+-        struct opvar *opdat = lvl->opcodes[n_opcode].opdat;
+-
+-        if (opcode < SPO_NULL || opcode >= MAX_SP_OPCODES)
+-            panic("sp_level_free: unknown opcode %i", opcode);
+-
+-        if (opdat)
+-            opvar_free(opdat);
+-        n_opcode++;
+-    }
++genericptr_t arena;
++{
++    /* VM stack values are independent clones and retain their normal lifetime. */
++    if (arena) Free(arena);
+     Free(lvl->opcodes);
+     lvl->opcodes = NULL;
+     return TRUE;
+@@ -6028,6 +6031,7 @@
  {
-     size_t len = strlen(buf);
-     const char *p = index(buf, ':'), *q = index(buf, '=');
--    struct symparse *sp = loadsyms;
-+    const struct symparse *sp = loadsyms;
+     dlb *fd;
+     sp_lev *lvl = NULL;
++    genericptr_t operand_arena = NULL;
+     boolean result = FALSE;
+     struct version_info vers_info;
  
-     if (!p || (q && q < p))
-         p = q;
-@@ -6182,7 +6182,7 @@
-             return sp;
-         sp++;
+@@ -6041,11 +6045,15 @@
      }
--    return (struct symparse *) 0;
-+    return (const struct symparse *) 0;
+ 
+     lvl = (sp_lev *) alloc(sizeof (sp_lev));
+-    result = sp_level_loader(fd, lvl);
++
++    result = sp_level_loader(fd, lvl, &operand_arena);
++
+     (void) dlb_fclose(fd);
+     if (result)
+         result = sp_level_coder(lvl);
+-    sp_level_free(lvl);
++
++    sp_level_free(lvl, operand_arena);
++
+     Free(lvl);
+ 
+ give_up:
+--- a/sys/unix/unixmain.c
++++ b/sys/unix/unixmain.c
+@@ -12,6 +12,7 @@
+ #include <sys/stat.h>
+ #include <signal.h>
+ #include <pwd.h>
++#include <sys/random.h>
+ #ifndef O_RDONLY
+ #include <fcntl.h>
+ #endif
+@@ -307,15 +308,7 @@
+         if (dorecover(fd)) {
+             resuming = TRUE; /* not starting new game */
+             wd_message();
+-            if (discover || wizard) {
+-                /* this seems like a candidate for paranoid_confirmation... */
+-                if (yn("Do you want to keep the save file?") == 'n') {
+-                    (void) delete_savefile();
+-                } else {
+-                    (void) chmod(fq_save, FCMASK); /* back to readable */
+-                    nh_compress(fq_save);
+-                }
+-            }
++
+         }
+     }
+ 
+@@ -343,6 +336,7 @@
+                 goto attempt_restore;
+             }
+         }
++        getlock(); /* clear sidecars after rejected or interrupted checkpoint */
+         newgame();
+         wd_message();
+     }
+@@ -779,23 +773,23 @@
+ sys_random_seed()
+ {
+     unsigned long seed = 0L;
+-    unsigned long pid = (unsigned long) getpid();
+     boolean no_seed = TRUE;
+-#ifdef DEV_RANDOM
+-    FILE *fptr;
+-
+-    fptr = fopen(DEV_RANDOM, "r");
+-    if (fptr) {
+-        fread(&seed, sizeof (long), 1, fptr);
++
++    /*
++     * pico-bare: there is no /dev/urandom on the board.  The platform's
++     * getentropy() mixes the RP2040 hardware RNG into the ring oscillator,
++     * which is a real seed; fall back to the old weak one only if it fails.
++     */
++    if (getentropy(&seed, sizeof seed) == 0) {
+         has_strong_rngseed = TRUE;  /* decl.c */
+         no_seed = FALSE;
+-        (void) fclose(fptr);
+     } else {
+         /* leaves clue, doesn't exit */
+         paniclog("sys_random_seed", "falling back to weak seed");
+     }
+-#endif
+     if (no_seed) {
++        unsigned long pid = (unsigned long) getpid();
++
+         seed = (unsigned long) getnow(); /* time((TIME_type) 0) */
+         /* Quick dirty band-aid to prevent PRNG prediction */
+         if (pid) {
+--- a/sys/unix/unixunix.c
++++ b/sys/unix/unixunix.c
+@@ -91,126 +91,26 @@
+     return 1;     /* success! */
  }
  
- int
---- pristine/include/extern.h
-+++ edited/include/extern.h
-@@ -594,10 +594,10 @@
- E void NDECL(init_ov_primary_symbols);
- E void NDECL(init_ov_rogue_symbols);
- E void FDECL(clear_symsetentry, (int, BOOLEAN_P));
--E void FDECL(update_primary_symset, (struct symparse *, int));
--E void FDECL(update_rogue_symset, (struct symparse *, int));
--E void FDECL(update_ov_primary_symset, (struct symparse *, int));
--E void FDECL(update_ov_rogue_symset, (struct symparse *, int));
-+E void FDECL(update_primary_symset, (const struct symparse *, int));
-+E void FDECL(update_rogue_symset, (const struct symparse *, int));
-+E void FDECL(update_ov_primary_symset, (const struct symparse *, int));
-+E void FDECL(update_ov_rogue_symset, (const struct symparse *, int));
- E boolean FDECL(cursed_object_at, (int, int));
- E nhsym FDECL(get_othersym, (int, int));
- 
-@@ -1792,7 +1792,7 @@
- E int FDECL(load_symset, (const char *, int));
- E void NDECL(free_symsets);
- E boolean FDECL(parsesymbols, (char *, int));
--E struct symparse *FDECL(match_sym, (char *));
-+E const struct symparse *FDECL(match_sym, (char *));
- E void NDECL(set_playmode);
- E int FDECL(sym_val, (const char *));
- E int FDECL(query_color, (const char *));
-
---- pristine/src/do.c
-+++ edited/src/do.c
-@@ -1467,6 +1467,8 @@
-         oinit(); /* reassign level dependent obj probabilities */
-     }
-     reglyph_darkroom();
-+    /* the new level is built or loaded: sample the heap and stack peaks */
-+    nh_mem_transition((int) u.uz.dlevel, (long) moves);
-     u.uinwater = 0;
-     /* do this prior to level-change pline messages */
-     vision_reset();         /* clear old level's line-of-sight */
---- pristine/src/end.c
-+++ edited/src/end.c
-@@ -577,6 +577,8 @@
-     VA_START(str);
-     VA_INIT(str, char *);
- 
-+    /* print the RAM peaks before a panic loses the console */
-+    nh_mem_report();
-     if (program_state.panicking++)
-         NH_abort(); /* avoid loops - this should never happen*/
- 
-@@ -1708,6 +1710,7 @@
- nh_terminate(status)
- int status;
++/* Single-player Pico: a checkpoint owns the fixed level namespace until
++ * consumed. Orphans from an interrupted save/new game are cleared together. */
+ void
+ getlock()
  {
-+    nh_mem_report();
-     program_state.in_moveloop = 0; /* won't be returning to normal play */
- #ifdef MAC
-     getreturn("to exit");
+-    register int i = 0, fd, c;
+-    const char *fq_lock;
+-
+-#ifdef TTY_GRAPHICS
+-    /* idea from rpick%ucqais@uccba.uc.edu
+-     * prevent automated rerolling of characters
+-     * test input (fd0) so that tee'ing output to get a screen dump still
+-     * works
+-     * also incidentally prevents development of any hack-o-matic programs
+-     */
+-    /* added check for window-system type -dlc */
+-    if (!strcmp(windowprocs.name, "tty"))
+-        if (!isatty(0))
+-            error("You must play from a terminal.");
+-#endif
+-
+-    /* we ignore QUIT and INT at this point */
+-    if (!lock_file(HLOCK, LOCKPREFIX, 10)) {
+-        wait_synch();
+-        error("%s", "");
+-    }
+-
+-    /* default value of lock[] is "1lock" where '1' gets changed to
+-       'a','b',&c below; override the default and use <uid><charname>
+-       if we aren't restricting the number of simultaneous games */
+-    if (!locknum)
+-        Sprintf(lock, "%u%s", (unsigned) getuid(), plname);
+-
+-    regularize(lock);
++    int fd, saved;
++    Strcpy(lock, "0game");
++    set_savefile_name(TRUE);
++    saved = open_savefile();
++    if (saved >= 0)
++        (void) nhclose(saved);
++    else
++        (void) eraseoldlocks();
++    (void) unlink(fqname("0game.tmp", SAVEPREFIX, 2));
+     set_levelfile_name(lock, 0);
+-
+-    if (locknum) {
+-        if (locknum > 25)
+-            locknum = 25;
+-
+-        do {
+-            lock[0] = 'a' + i++;
+-            fq_lock = fqname(lock, LEVELPREFIX, 0);
+-
+-            if ((fd = open(fq_lock, 0)) == -1) {
+-                if (errno == ENOENT)
+-                    goto gotlock; /* no such file */
+-                perror(fq_lock);
+-                unlock_file(HLOCK);
+-                error("Cannot open %s", fq_lock);
+-            }
+-
+-            /* veryold() closes fd if true */
+-            if (veryold(fd) && eraseoldlocks())
+-                goto gotlock;
+-            (void) close(fd);
+-        } while (i < locknum);
+-
+-        unlock_file(HLOCK);
+-        error("Too many hacks running now.");
+-    } else {
+-        fq_lock = fqname(lock, LEVELPREFIX, 0);
+-        if ((fd = open(fq_lock, 0)) == -1) {
+-            if (errno == ENOENT)
+-                goto gotlock; /* no such file */
+-            perror(fq_lock);
+-            unlock_file(HLOCK);
+-            error("Cannot open %s", fq_lock);
+-        }
+-
+-        /* veryold() closes fd if true */
+-        if (veryold(fd) && eraseoldlocks())
+-            goto gotlock;
+-        (void) close(fd);
+-
+-      {
+-        const char destroy_old_game_prompt[] =
+-    "There is already a game in progress under your name.  Destroy old game?";
+-
+-        if (iflags.window_inited) {
+-            /* this is a candidate for paranoid_confirmation */
+-            c = yn(destroy_old_game_prompt);
+-        } else {
+-            (void) printf("\n%s [yn] ", destroy_old_game_prompt);
+-            (void) fflush(stdout);
+-            if ((c = getchar()) != EOF) {
+-                int tmp;
+-
+-                (void) putchar(c);
+-                (void) fflush(stdout);
+-                while ((tmp = getchar()) != '\n' && tmp != EOF)
+-                    ; /* eat rest of line and newline */
+-            }
+-        }
+-      }
+-        if (c == 'y' || c == 'Y') {
+-            if (eraseoldlocks()) {
+-                goto gotlock;
+-            } else {
+-                unlock_file(HLOCK);
+-                error("Couldn't destroy old game.");
+-            }
+-        } else {
+-            unlock_file(HLOCK);
+-            error("%s", "");
+-        }
+-    }
+-
+-gotlock:
+-    fd = creat(fq_lock, FCMASK);
+-    unlock_file(HLOCK);
+-    if (fd == -1) {
+-        error("cannot creat lock file (%s).", fq_lock);
+-    } else {
+-        if (write(fd, (genericptr_t) &hackpid, sizeof hackpid)
+-            != sizeof hackpid) {
+-            error("cannot write lock (%s)", fq_lock);
+-        }
+-        if (close(fd) == -1) {
+-            error("cannot close lock (%s)", fq_lock);
+-        }
+-    }
++    fd = creat(fqname(lock, LEVELPREFIX, 0), FCMASK);
++    if (fd < 0 || write(fd, (genericptr_t) &hackpid, sizeof hackpid) != sizeof hackpid)
++        error("cannot create checkpoint lock");
++    if (nhclose(fd) < 0)
++        error("cannot close checkpoint lock");
+ }
+ 
+ /* normalize file name - we don't like .'s, /'s, spaces */

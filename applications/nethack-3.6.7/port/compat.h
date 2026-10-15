@@ -65,3 +65,7 @@ void nh_mem_report(void);
  */
 #define NOMAIL
 #define NOSHELL
+
+void nh_checkpoint_write(int, int);
+void nh_checkpoint_read(int, int);
+void nh_checkpoint_owner(int);

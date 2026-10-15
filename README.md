@@ -53,16 +53,16 @@ python3 applications/nethack-3.1.3/build.py
 # Or use an existing upstream Git checkout
 python3 applications/nethack-3.1.3/build.py --source /path/to/nethack
 
-# NetHack 3.6.7; same host requirements, data volume is Tamp-compressed
-python3 applications/nethack-3.6.7/build.py
+# NetHack 3.6.7; compressed data and levels
+applications/nethack-3.6.7/build.sh
 ```
 
 NetHack also needs a 32-bit host compiler, Bison and Flex. See the
 [NetHack recipe](applications/nethack-3.1.3/README.md) for dependencies, source
 revision, memory layout and optional soft reboot.
 
-An opt-in combined SRAM trial for NetHack 3.6.7 is available under
-[artifacts/nethack-3.6.7](artifacts/nethack-3.6.7/README.md).
+For NetHack 3.6.7, see its [build and configuration guide](applications/nethack-3.6.7/README.md),
+including QEMU generator support on Apple Silicon.
 
 Build outputs are kept under `build/`. Each application produces a firmware UF2
 and a separate FAT data-volume UF2. The build checks flash and SRAM bounds and

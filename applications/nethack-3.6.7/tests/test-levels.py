@@ -2,7 +2,7 @@ from pathlib import Path
 import re,subprocess,argparse,sys
 root=Path(__file__).resolve().parent
 p=argparse.ArgumentParser();p.add_argument('--build-dir',type=Path,required=True);a=p.parse_args()
-out=a.build_dir.resolve()/'tests';out.mkdir(exist_ok=True);r=a.build_dir.resolve()/'game/source'
+out=a.build_dir.resolve()/'tests';out.mkdir(exist_ok=True);r=a.build_dir.resolve()/'source'
 s=(r/'src/sp_lev.c').read_text();h=(r/'include/sp_lev.h').read_text();decl=(r/'include/decl.h').read_text()
 funcs='\n'.join(re.search(pattern,s,re.S).group() for pattern in [r'static void\nnh_sp_read\(.*?\n\}',r'STATIC_OVL boolean\nsp_level_loader\(.*?\n\}',r'STATIC_OVL boolean\nsp_level_free\(.*?\n\}'])
 enum=re.search(r'enum opcode_defs \{.*?\n\};',h,re.S).group()
@@ -63,5 +63,5 @@ int main(int argc,char **argv) {
 }
 '''
 p=out/'operand_arena_test.c';p.write_text(code)
-subprocess.run([sys.executable,str(root/'host32_cc.py'),str(p),'-o',str(out/'operand_arena_test')],check=True)
-subprocess.run([sys.executable,str(root/'host32_run.py'),str(out/'operand_arena_test'),'dat'],cwd=r,check=True)
+subprocess.run([sys.executable,str(root.parent/'port/host/host32_cc.py'),str(p),'-o',str(out/'operand_arena_test')],check=True)
+subprocess.run([sys.executable,str(root.parent/'port/host/host32_run.py'),str(out/'operand_arena_test'),'dat'],cwd=r,check=True)

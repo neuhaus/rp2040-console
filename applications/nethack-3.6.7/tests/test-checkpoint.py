@@ -4,7 +4,7 @@ from pathlib import Path
 import argparse,re,subprocess,os
 HERE=Path(__file__).resolve().parent
 p=argparse.ArgumentParser(description=__doc__);p.add_argument('--build-dir',type=Path,required=True);a=p.parse_args()
-work=a.build_dir.resolve();src=work/'game/source';out=work/'tests/checkpoint';out.mkdir(parents=True,exist_ok=True)
+work=a.build_dir.resolve();src=work/'source';out=work/'tests/checkpoint';out.mkdir(parents=True,exist_ok=True)
 code=(src/'src/checkpoint.c').read_text().replace('#include "hack.h"',r'''
 #include <stdio.h>
 #include <stdlib.h>
@@ -49,6 +49,11 @@ code+='\n'+re.search(r'static int\neraseoldlocks\(\).*?\n\}',u,re.S).group()
 code+='\n'+re.search(r'void\ngetlock\(\).*?\n\}',u,re.S).group()
 s=(src/'src/save.c').read_text();commit=re.search(r'    if \(unlink\(fq_save\).*?panic\("cannot commit checkpoint \(%d\)", errno\);',s,re.S).group()
 code+='\nstatic void commit(void){const char *fq_save="save/0game";\n'+commit+'\n}\n'
+r=(src/'src/restore.c').read_text()
+owner=re.search(r'    if \(restoring && !ghostly && !pid\)\n        nh_checkpoint_owner\(hpid\);',r).group()
+checks=r[r.index('    if ((pid && pid != hpid)'):r.index('    restcemetery(fd, &level.bonesinfo);',r.index('    if ((pid && pid != hpid)'))]
+code+='\n#define BUFSZ 256\n#define Sprintf(buf,...) snprintf(buf,sizeof(buf),__VA_ARGS__)\nstatic int wizard;\nstatic void pline1(const char *s){(void)s;}\nstatic void trickery(const char *s){panic("%s",s);}\n'
+code+='static void level_owner_checks(int hpid,int pid,int dlvl,int lev,int restoring,int ghostly){\n'+owner+'\n'+checks+'\n}\n'
 code+=r'''
 static void put(const char *name,const void *data,size_t n){int fd=open(name,O_WRONLY|O_CREAT|O_TRUNC,0600);assert(fd>=0);assert(write(fd,data,n)==(ssize_t)n);assert(!close(fd));}
 static void expect_bad(const char *expected){
@@ -70,11 +75,23 @@ int main(void){
  unsigned char duplicate[26];memcpy(duplicate,manifest,26);duplicate[16]=1;duplicate[17]=0;put("manifest",duplicate,26);expect_bad("invalid checkpoint level 1");put("manifest",manifest,26);
  /* A committed companion preserves its sidecars across startup. */
  put("save/0game",manifest,26);getlock();assert(access("0game.1",F_OK)==0&&access("0game.3",F_OK)==0);assert(access("0game.0",F_OK)==0);
+ /* A resumed game retains its owner across processes without rewriting levels. */
+ hackpid=99;level_owner_checks(17,0,2,0,1,0);assert(hackpid==17);
+ fd=open("0game.0",O_RDONLY);int owner;assert(fd>=0&&read(fd,&owner,sizeof owner)==sizeof owner&&owner==17);close(fd);
+ level_owner_checks(17,hackpid,1,1,0,0);level_owner_checks(17,hackpid,3,3,0,0);
+ /* The companion can be saved/resumed repeatedly with the original owner. */
+ hackpid=101;getlock();level_owner_checks(17,0,2,0,1,0);assert(hackpid==17);
+ fd=open("0game.0",O_RDONLY);assert(fd>=0&&read(fd,&owner,sizeof owner)==sizeof owner&&owner==17);close(fd);
+ armed=1;if(!setjmp(failure)){level_owner_checks(18,hackpid,1,1,0,0);assert(!"wrong owner accepted");}assert(strstr(reason,"PID"));armed=0;
+ armed=1;if(!setjmp(failure)){level_owner_checks(17,hackpid,3,1,0,0);assert(!"wrong ledger accepted");}assert(strstr(reason,"not 1"));armed=0;
+ level_owner_checks(88,0,0,0,0,1);assert(hackpid==17);
+ armed=1;if(!setjmp(failure)){level_owner_checks(0,0,2,0,1,0);assert(!"invalid owner accepted");}assert(strstr(reason,"invalid checkpoint owner"));armed=0;
+ fd=open("0game.1",O_RDONLY);assert(fd>=0&&read(fd,a,sizeof a)==sizeof a);close(fd);for(unsigned i=0;i<sizeof a;i++)assert(a[i]==(unsigned char)(i*13));
  /* A completed temp is still not a checkpoint until publication succeeds. */
  unlink("save/0game");put("0game.tmp",manifest,26);getlock();assert(access("0game.tmp",F_OK)<0);assert(access("0game.1",F_OK)<0&&access("0game.3",F_OK)<0);
  put("0game.tmp",manifest,26);commit();assert(access("0game.tmp",F_OK)<0);fd=open("save/0game",O_RDONLY);assert(fd>=0);unsigned char got[26];assert(read(fd,got,26)==26&&!memcmp(got,manifest,26));close(fd);
  unlink("save/0game");armed=1;if(!setjmp(failure)){commit();assert(!"missing temp committed");}assert(strstr(reason,"cannot commit checkpoint"));armed=0;assert(access("save/0game",F_OK)<0);
- puts("PASS checkpoint: CRC vector, round trip, damaged/missing/truncated/duplicate levels, cache preservation, interrupted-temp cleanup and completed-file publication");
+ puts("PASS checkpoint: CRC vector, round trip, damaged/missing/truncated/duplicate levels, cache preservation, cross-process owner/ledger checks, repeated resume, interrupted-temp cleanup and completed-file publication");
  return 0;
 }
 '''

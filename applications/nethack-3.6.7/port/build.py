@@ -9,7 +9,7 @@ import struct
 import subprocess
 import zlib
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parent.parent
 CONSOLE = HERE.parent.parent
 # tag NetHack-3.6.7_Released
 COMMIT = 'ed600d9f0f3c37677418f0150f59363ca641f3dc'
@@ -31,11 +31,11 @@ DATA_LIBRARY = (
 )
 
 
-# The data library's raw-deflate windows, in bits.  build.py probes these per
+# The data library's raw-deflate windows, in bits.  the build probes these per
 # entry and records the winner in the directory; the board's inflater allocates
 # a 1<<wbits dictionary (port/nhdlb.c).  Keep the two in step.
 NH_WINDOW_MIN = 10
-NH_WINDOW_MAX = 15
+NH_WINDOW_MAX = 12
 NH_NAME_MAX = 16
 
 
@@ -48,10 +48,8 @@ def pack_nhdata(dat, library):
     """Write dat/nhdata: raw-deflate streams for `library`, in one archive.
 
     The format matches port/nhdlb.c: a 12-byte header, a 32-byte directory
-    entry per file, then the concatenated deflate streams.  Each entry takes
-    the window that packs it smallest, so a big text file read once mid-game
-    can use a wide one while a level template - decoded while a new level is
-    being built, when free memory is tightest - stays small.
+    entry per file, then the concatenated deflate streams.  Each entry takes the smallest compressed output among windows of at
+    most 4 KiB, bounding decoder SRAM even for large text files.
     """
     blob = bytearray()
     directory = bytearray()
@@ -87,12 +85,14 @@ def pack_nhdata(dat, library):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(prog='build.sh', description=__doc__)
     parser.add_argument('--source', type=Path,
                         help='Existing NetHack Git checkout (left unchanged)')
     parser.add_argument('--build-dir', type=Path,
                         default=CONSOLE / 'build/nethack-3.6.7')
     parser.add_argument('--soft-reboot', action='store_true')
+    parser.add_argument('--sram-diagnostics', action='store_true',
+                        help='Deterministic wizard probes; not for ordinary play')
     parser.add_argument('--nethack-options', default='', metavar='OPTS',
                         help='NETHACKOPTIONS for this image, e.g. '
                              '"symset:DECgraphics,number_pad:-1"')
@@ -101,6 +101,8 @@ def main():
                              'line the recipe ships)')
     parser.add_argument('--jobs', type=int, default=4)
     args = parser.parse_args()
+    if args.sram_diagnostics:
+        args.nethack_options = "name:wizard,role:Wizard,race:human,gender:male,align:neutral,playmode:debug,!autopickup" + ("," + args.nethack_options if args.nethack_options else "")
     banner = (args.banner if args.banner is not None
               else os.environ.get('BANNER', DEFAULT_BANNER))
     work = args.build_dir.resolve()
@@ -114,7 +116,13 @@ def main():
     marker.write_text(COMMIT + '\n')
     source = args.source.resolve() if args.source else work / 'upstream'
     src = work / 'source'
-    src.mkdir(exist_ok=True)
+    if source == src or src in source.parents:
+        parser.error('Upstream checkout must be outside the generated source tree')
+    if src.is_symlink():
+        parser.error('Generated source path must not be a symlink')
+    if src.exists():
+        shutil.rmtree(src)
+    src.mkdir()
 
     def run(command, cwd=src, **kwargs):
         print('+', shlex.join(map(str, command)), flush=True)
@@ -152,6 +160,13 @@ def main():
     # rather than shipping a binary that still looks for NetHack's nhdat.
     if 'NHDATA_FILE' not in (src / 'src' / 'dlb.c').read_text():
         parser.error('port/nhdlb.c did not replace src/src/dlb.c')
+
+    if args.sram_diagnostics:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('sram_diagnostics', port / 'sram_diagnostics.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.prepare(src, port)
 
     # Compiler and runner are argument lists, never shell-evaluated commands.
     cc = shlex.split(os.environ.get('HOST_CC', 'gcc'))
@@ -220,7 +235,7 @@ def main():
                       str(port / 'host' / 'nhdata_check.c'),
                       str(src / 'uzlib' / 'tinflate.c'),
                       '-o', work / 'nhdata_check'])
-    run([str(work / 'nhdata_check'), str(dat / 'nhdata'), str(dat)])
+    run(runner + [str(work / 'nhdata_check'), str(dat / 'nhdata'), str(dat)])
 
     # Confirm the host's byte layout matches the target's before shipping the
     # generated data files.
@@ -230,6 +245,7 @@ def main():
          '-o', 'layout-arm.o'], cwd=src)
     run(['python3', CONSOLE / 'tools/check-layout.py',
          '--host-object', 'layout-native.o', '--target-object', 'layout-arm.o',
+         '--host-nm', os.environ.get('HOST_NM', 'nm'),
          '--target-nm', 'arm-none-eabi-nm'], cwd=src)
 
     firmware = work / ('soft' if args.soft_reboot else 'hardware')

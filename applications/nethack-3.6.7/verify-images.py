@@ -48,7 +48,7 @@ for line in subprocess.check_output(
         symbols[parts[2]] = int(parts[0], 16)
 assert 0x10000000 <= symbols['main'] < fs_xip, 'main does not execute from flash'
 assert 0x10000000 <= symbols['rp2040_console_game_main'] < fs_xip
-assert symbols['__HeapLimit'] == 0x2003c000 \
+assert symbols['__HeapLimit'] == 0x2003d000 \
     and symbols['__bss_end__'] < symbols['__HeapLimit'] < symbols['__StackBottom']
 print('PASS: XIP entry points, 2 MB flash bounds, UF2 families/blocks, nonoverlapping images, heap/stack bounds')
 print('Firmware bytes:', (b / 'nethack.bin').stat().st_size,
