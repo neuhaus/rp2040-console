@@ -574,6 +574,22 @@
      { '#', "#", "perform an extended command",
              doextcmd, IFBURIED | GENERALCMD },
      { M('?'), "?", "list all extended commands",
+@@ -3617,10 +3617,14 @@
+ 
+ boolean
+ bind_key(key, command)
+-uchar key;
++int key;
+ const char *command;
+ {
+     struct ext_func_tab *extcmd;
++
++    /* Meta keys can arrive as negative signed characters.  Normalize the
++     * promoted argument explicitly before indexing the 256-entry table. */
++    key = (unsigned char) key;
+ 
+     /* special case: "nothing" is reserved for unbinding */
+     if (!strcmp(command, "nothing")) {
 --- a/src/display.c
 +++ b/src/display.c
 @@ -1292,7 +1292,7 @@

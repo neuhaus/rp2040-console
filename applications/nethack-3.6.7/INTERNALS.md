@@ -84,6 +84,14 @@ with QEMU and a native C compiler installed:
 python3 applications/nethack-3.6.7/tests/test.py --build-dir build/nethack-3.6.7
 ```
 
+The command-binding regression compiles the real `bind_key()` and
+`commands_init()` functions both with and without the release LTO options. It
+checks all signed and unsigned byte keys, binding/unbinding, unchanged adjacent
+entries and guards around the keyboard table. Explicit byte normalization in
+`bind_key()` avoids negative meta-key indexes observed with ARM GCC 15.3.1 LTO;
+the original code corrupts a worm-list pointer at startup and faults on the
+first level save or restore.
+
 For repeatable Pico measurements, build a separate image with
 `--sram-diagnostics`. It enables a fixed-seed wizard character, serial allocation
 and stack/guard readings, `#sramtrial` (Ludios), `#sramstack` (travel probes), and

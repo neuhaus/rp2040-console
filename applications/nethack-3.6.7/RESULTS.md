@@ -1,4 +1,4 @@
-# Hardware validation — 15 October 2026
+# Hardware validation — 16 October 2026
 
 **The RP2040 completed the maximum-branch wizard stress scenario through all
 81 playable levels, saved and restored on every endgame plane, offered the
@@ -17,12 +17,12 @@ platform code and codecs remain ordinary objects.
 
 | Current build | Firmware | Static SRAM | Heap budget | Stack reserve |
 |---|---:|---:|---:|---:|
-| Ordinary release | 1,545,828 B | 133,440 B | 116,416 B | 20,480 B |
-| Maximum-branch diagnostic | 1,547,796 B | 133,492 B | 116,364 B | 20,480 B |
+| Ordinary release | 1,545,876 B | 133,440 B | 116,416 B | 20,480 B |
+| Maximum-branch diagnostic (15 October) | 1,547,796 B | 133,492 B | 116,364 B | 20,480 B |
 
 Both builds pass archive decoding, host/target layout, FAT, UF2 and flash/SRAM
-bounds checks. The final ordinary image also booted on the Pico to its normal
-USB date/time prompt.
+bounds checks. The ordinary image was also tested through checkpoint restore
+and actual staircase commands on the Pico, as detailed below.
 
 Regression checks passed for:
 
@@ -39,6 +39,31 @@ Regression checks passed for:
 - 78 repeated role/alignment cases for writable quest traits while keeping
   monster identities and the base table immutable.
 - The console regression suite and shared `getcwd()`/`fpathconf()` API checks.
+- Actual command initialization and all signed/unsigned byte bindings, including
+  unbinding and memory guards, under ARM/newlib both with and without LTO.
+  This test fails against the previous release with LTO and passes with the fix.
+
+## Ordinary staircase regression
+
+The 15 October ordinary release could freeze on the first `>` from dungeon
+level 1. ARM GCC 15.3.1 with the release LTO options failed to narrow a legacy
+`uchar` argument in `bind_key()`: the negative meta-key `M('n')` indexed before
+`Cmd.commands`, overwriting a worm-list pointer during command initialization.
+The first level save then faulted in `save_worm()`. Restoring a checkpoint could
+fault while clearing the same list. Diagnostic builds had a different memory
+layout and did not expose this failure during forced wizard travel.
+
+The port now receives the promoted key as `int` and explicitly normalizes it to
+an unsigned byte before indexing. On the connected Pico, a fresh normal
+character with a test-only staircase-positioning wrapper completed the actual
+`>` command without the earlier worm-list corruption. The ordinary firmware,
+without that wrapper or fault instrumentation, restored a level-1 checkpoint,
+descended to level 2, returned up to the cached first level, saved again, then
+restored after a hardware reboot and descended to level 2 again.
+The fix adds 48 bytes of flash and no static SRAM; the save format is unchanged.
+
+The full-dungeon resource measurements below were taken on 15 October with the
+separate diagnostic build. They do not replace ordinary-image functional tests.
 
 ## Accumulated dungeon and checkpoint
 
