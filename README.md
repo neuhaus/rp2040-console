@@ -61,6 +61,9 @@ NetHack also needs a 32-bit host compiler, Bison and Flex. See the
 [NetHack recipe](applications/nethack-3.1.3/README.md) for dependencies, source
 revision, memory layout and optional soft reboot.
 
+An opt-in combined SRAM trial for NetHack 3.6.7 is available under
+[artifacts/nethack-3.6.7](artifacts/nethack-3.6.7/README.md).
+
 Build outputs are kept under `build/`. Each application produces a firmware UF2
 and a separate FAT data-volume UF2. The build checks flash and SRAM bounds and
 verifies the data volume before converting it to UF2.
