@@ -17,7 +17,7 @@ platform code and codecs remain ordinary objects.
 
 | Current build | Firmware | Static SRAM | Heap budget | Stack reserve |
 |---|---:|---:|---:|---:|
-| Ordinary release | 1,545,876 B | 133,440 B | 116,416 B | 20,480 B |
+| Ordinary release | 1,546,148 B | 133,456 B | 116,400 B | 20,480 B |
 | Maximum-branch diagnostic (15 October) | 1,547,796 B | 133,492 B | 116,364 B | 20,480 B |
 
 Both builds pass archive decoding, host/target layout, FAT, UF2 and flash/SRAM
@@ -61,6 +61,13 @@ without that wrapper or fault instrumentation, restored a level-1 checkpoint,
 descended to level 2, returned up to the cached first level, saved again, then
 restored after a hardware reboot and descended to level 2 again.
 The fix adds 48 bytes of flash and no static SRAM; the save format is unchanged.
+
+The subsequent terminfo and automatic-resume update passes the console and
+application regression suites, including actual upstream colour generation and
+checkpoint name selection. Its firmware was flashed and verified on the Pico;
+the user confirmed the display looks correct. Relative to the staircase-only
+fix, it adds 272 bytes of firmware and 16 bytes of static SRAM. The save format
+and flash layout are unchanged.
 
 The full-dungeon resource measurements below were taken on 15 October with the
 separate diagnostic build. They do not replace ordinary-image functional tests.

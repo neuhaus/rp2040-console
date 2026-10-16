@@ -72,6 +72,22 @@ measurements apply to the default hardware-reboot build.
 measurements; leave it off for ordinary play. For a separately installed
 picotool, set `PICOTOOL` to its executable.
 
+## Terminal colours and resume naming
+
+NetHack uses its upstream `TERMINFO` colour path. The console supplies fixed
+ANSI colour definitions and the `Co`, `AF`, `AB`, `md`, `me`, `mr` and `le`
+capabilities. Its bounded `tparm()` adapter expands only the advertised
+one-integer colour capabilities; no curses screen manager or terminfo database
+is needed. With the default `use_darkgray`, black glyphs—including `dark_room`
+floors—use bold black rather than inverse video. Disabling `use_darkgray` uses
+the upstream blue fallback. The terminal's palette controls the actual shades.
+
+When no character name is configured, startup probes the single checkpoint and
+uses a temporary name only if it exists. Restore supplies the saved hero's
+name. If restore fails, the temporary name is cleared before normal character
+selection, so a new game still asks for a name. `USER` and `LOGNAME` remain
+unset; no dummy name leaks into ordinary new games.
+
 ## Regression checks
 
 The build checks all archive entries with zlib and the target inflater, compares
@@ -84,7 +100,8 @@ with QEMU and a native C compiler installed:
 python3 applications/nethack-3.6.7/tests/test.py --build-dir build/nethack-3.6.7
 ```
 
-The command-binding regression compiles the real `bind_key()` and
+The startup regression checks actual upstream colour generation, cleanup and
+checkpoint name selection. The command-binding regression compiles the real `bind_key()` and
 `commands_init()` functions both with and without the release LTO options. It
 checks all signed and unsigned byte keys, binding/unbinding, unchanged adjacent
 entries and guards around the keyboard table. Explicit byte normalization in

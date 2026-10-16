@@ -1,7 +1,7 @@
 /*
  * Bare-metal termcap shim for the Pico port.
  *
- * A termcap-driven game drives the screen through five entry points:
+ * A termcap-driven game drives the screen through these entry points:
  *
  *     tgetent()  parse an /etc/termcap entry
  *     tgetstr()  fetch a capability string
@@ -9,6 +9,7 @@
  *     tgetflag() test a boolean capability
  *     tputs()    emit a capability with %-padding
  *     tgoto()    emit a cursor-motion capability for (col,row)
+ *     tparm()    expand the one-integer ANSI colour capabilities
  *
  * A hosted build gets these from a termcap library reading /etc/termcap.
  * There is nothing of the kind here, and no way to learn what terminal is
@@ -40,11 +41,10 @@ static char s_nd[] = "\033[C";
 static char s_up[] = "\033[A";
 static char s_so[] = "\033[7m";
 static char s_se[] = "\033[m";
-/* ANSI setaf/setab (colour).  NetHack's termcap path actually derives its
- * colour sequences from so/se, but the capabilities are here for anything
- * that probes for them. */
-static char s_AF[] = "\033[3%dm";
-static char s_AB[] = "\033[4%dm";
+static char s_md[] = "\033[1m";
+/* ANSI setaf/setab, in terminfo parameter syntax. */
+static char s_AF[] = "\033[3%p1%dm";
+static char s_AB[] = "\033[4%p1%dm";
 /* Select DEC drawing in G0 and restore ASCII using only ESC sequences.
  * Avoid SI (Ctrl-O): screen serial ports can process it as VDISCARD when
  * IEXTEN is enabled, consuming it and producing unsolicited input. */
@@ -122,6 +122,8 @@ int tgetnum(const char *id)
         return SHIM_COLS;
     if (strcmp(id, "li") == 0)
         return SHIM_ROWS;
+    if (strcmp(id, "Co") == 0)
+        return 8;
     if (strcmp(id, "sg") == 0)
         return 0; /* no standout glitch: so/se are safe to use */
     return -1;
@@ -131,7 +133,7 @@ char *tgetstr(const char *id, char **area)
 {
     (void)area; /* static storage; nothing to allocate */
 
-    if (strcmp(id, "bc") == 0)
+    if (strcmp(id, "bc") == 0 || strcmp(id, "le") == 0)
         return s_bc;
     if (strcmp(id, "cl") == 0)
         return s_cl;
@@ -149,8 +151,12 @@ char *tgetstr(const char *id, char **area)
         return s_up;
     if (strcmp(id, "so") == 0)
         return s_so;
-    if (strcmp(id, "se") == 0)
+    if (strcmp(id, "se") == 0 || strcmp(id, "me") == 0)
         return s_se;
+    if (strcmp(id, "md") == 0)
+        return s_md;
+    if (strcmp(id, "mr") == 0)
+        return s_so;
     if (strcmp(id, "AF") == 0)
         return s_AF;
     if (strcmp(id, "AB") == 0)
@@ -231,6 +237,9 @@ char *tgoto(const char *cap, int col, int row)
     if (cap == NULL)
         return NULL;
 
+    if (strcmp(cap, s_AF) == 0 || strcmp(cap, s_AB) == 0)
+        return tparm(cap, col);
+
     if (strstr(cap, "%i%d;%dH") != NULL)
     {
         /*
@@ -260,5 +269,26 @@ char *tgoto(const char *cap, int col, int row)
 
     /* Nothing to expand; hand it back unchanged. */
     snprintf(out, sizeof(out), "%s", cap);
+    return out;
+}
+
+/* Bounded terminfo adapter: only the one-integer colour capabilities above
+ * are supported.  Unknown capabilities and colours fail explicitly; this
+ * is not a general terminfo expression interpreter.  The returned buffer
+ * is overwritten by the next call. */
+char *tparm(const char *cap, int value)
+{
+    static char out[16];
+    int base;
+
+    if (cap == NULL || value < 0 || value > 7)
+        return NULL;
+    if (strcmp(cap, s_AF) == 0)
+        base = 30;
+    else if (strcmp(cap, s_AB) == 0)
+        base = 40;
+    else
+        return NULL;
+    snprintf(out, sizeof(out), "\033[%dm", base + value);
     return out;
 }

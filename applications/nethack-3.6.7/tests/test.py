@@ -126,3 +126,5 @@ subprocess.run([sys.executable,str(HERE/"test-records.py"),"--build-dir",str(wor
 subprocess.run([sys.executable,str(HERE/"test-quest-traits.py"),"--build-dir",str(work)],check=True)
 
 subprocess.run([sys.executable,str(HERE/"test-bindings.py"),"--build-dir",str(work)],check=True)
+
+subprocess.run([sys.executable,str(HERE/"test-startup.py"),"--build-dir",str(work)],check=True)

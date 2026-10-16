@@ -30,5 +30,7 @@ char *tgetstr(const char *id, char **area);
 
 int tputs(const char *str, int affcnt, int (*putc_fn)(int));
 char *tgoto(const char *cap, int col, int row);
+/* One-integer AF/AB expansion only, not the full variadic terminfo API. */
+char *tparm(const char *cap, int value);
 
 #endif /* RP2040_CONSOLE_TERMCAP_H */

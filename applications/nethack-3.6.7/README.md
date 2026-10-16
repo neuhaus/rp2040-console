@@ -1,7 +1,6 @@
 # NetHack 3.6.7 on RP2040
 
-Play NetHack on a standard Pico with 2 MiB flash over USB serial. No SD card is
-needed.
+Play NetHack on a standard Pico with 2 MiB flash over USB serial.
 
 ## Build
 
