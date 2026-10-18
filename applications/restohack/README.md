@@ -32,8 +32,11 @@ git clone --branch 2.3.1 --depth 1 https://github.com/raspberrypi/pico-sdk.git
 git -C pico-sdk submodule update --init --depth 1 lib/tinyusb
 ```
 You will be cross compiling the game for use on the rp2040.
-Copy the `CMakeLists.txt` and `gen-onames.cmake` files from this directory to
-`restoHack/pico-bare/` (a directory you have to create first).
+
+```sh
+mkdir restoHack/pico-bare
+cp rp2040-console/applications/restoHack/{CMakeLists.txt,gen-onames.cmake} restoHack/pico-bare
+```
 
 ## Building the UF2 flash files
 
@@ -53,10 +56,10 @@ Congrats!
 
 ### Flashing
 
-This will overwrite whatever is currently on your Pico!
+This will _overwrite_ whatever is currently on your Pico!
 
-1. Hold *bootsel* while you plugin the usb port, or<br>if you rp2040 has a reset button hold both *reset* and *bootsel*, let go of *reset* first and then let go of *bootsel*. 
-2. You will see a new drive connected to your PC. On mac it shows up as `/Volumes/RPI-RP2`
+1. Hold *bootsel* while you plugin the usb port, or<br>if your rp2040 has a reset button, hold both *reset* and *bootsel*, let go of *reset* first and then let go of *bootsel*. 
+2. You will see a new drive connected to your PC. On Mac, it shows up as `/Volumes/RPI-RP2`
 3. Copy the first uf2 file to that drive. The Pico will reboot.
 4. Repeat steps 1-3 with the second uf2 file.
 
