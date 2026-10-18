@@ -12,8 +12,8 @@ Prerequsites: ARM GCC/newlib, a native C compiler, CMake, Python, `dosfstools`, 
 On Linux: 
 ```bash
 apt-get install git ca-certificates build-essential cmake ninja-build python3 \
-  gcc-arm-none-eabi binutils-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib \
-  dosfstools mtools libusb-1.0-0-dev pkg-config screen`
+  gcc-arm-none-eabi binutils-arm-none-eabi libnewlib-arm-none-eabi screen \
+  libstdc++-arm-none-eabi-newlib  dosfstools mtools libusb-1.0-0-dev pkg-config
 ```
 On Mac: 
 ```sh
