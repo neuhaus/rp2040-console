@@ -46,8 +46,8 @@ cmake -S . -B build \
       -DGAME_CONSOLE=../../rp2040-console \
       -DPICO_SDK_PATH=../../pico-sdk \
       -DPICO_BOARD=pico -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target hack      # -> build/hack.uf2       (the program)
-cmake --build build --target volume    # -> build/hack-volume.uf2 (the FAT volume)
+cmake --build build --target hack
+cmake --build build --target volume
 ```
 
 If everything goes well, you have `hack.uf2` and `hack-volume.uf2` in your build folder now. 
@@ -71,3 +71,29 @@ To quit screen, press ctrl+a then press shift+control+option+ `\\` (backslash) a
 
 Enjoy!
 
+```
+Hello Sven! Welcome again to goods's assorted antiques shop!
+                                        
+                                        
+                                        
+                                        
+        -------                         
+        |.....|                         
+        |.>...+#                        
+        |.....|#                        
+       #+.....|#           -------------                 #####
+       #-------#           |.........).|                    -+-----------
+       ##      #         ##+...........|          `#########+...........|
+        #      #         # |.........).|                    |...........|
+        #      #       ### |..<........|        -------   ##+...........|
+        #      #       #   |...........|        |.....|   # |...........|
+        #      # ------#   |...........+########+.....+#### |...........|
+   -----#      ##+....|#   -------------        |.....|     |...........|
+   |)/.|#        |..).+#                        |.....|     -------------
+   |/@.|#        |....|                         -------
+   |L!.@#        ------
+   -----
+
+
+Level 2    Hp  19(30)   Ac 8    Str 18      Exp  3          
+```
