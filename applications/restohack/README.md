@@ -10,15 +10,15 @@ The game sources go in untouched.
 
 Prerequsites: ARM GCC/newlib, a native C compiler, CMake, Python, `dosfstools`, and `mtools`.
 On Linux: 
-```sh
-apt-get install git ca-certificates build-essential cmake ninja-build python3 \\
- gcc-arm-none-eabi binutils-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib \\
- dosfstools mtools libusb-1.0-0-dev pkg-config screen`
+```bash
+apt-get install git ca-certificates build-essential cmake ninja-build python3 \
+  gcc-arm-none-eabi binutils-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib \
+  dosfstools mtools libusb-1.0-0-dev pkg-config screen`
 ```
 On Mac: 
 ```sh
 xcode-select --install
-brew install git cmake ninja python dosfstools mtools libusb pkgconf`
+brew install git cmake ninja python dosfstools mtools libusb pkgconf
 brew install --cask gcc-arm-embedded
 export PATH="$(brew --prefix dosfstools)/sbin:$PATH"
 ```
@@ -30,7 +30,6 @@ git clone https://github.com/neuhaus/rp2040-console.git
 git clone https://github.com/Critlist/restoHack.git
 git clone --branch 2.3.1 --depth 1 https://github.com/raspberrypi/pico-sdk.git
 git -C pico-sdk submodule update --init --depth 1 lib/tinyusb
-export PICO_SDK_PATH="$(cd pico-sdk && pwd)"
 ```
 You will be cross compiling the game for use on the rp2040.
 Copy the `CMakeLists.txt` and `gen-onames.cmake` files from this directory to
