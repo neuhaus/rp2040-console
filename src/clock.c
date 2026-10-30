@@ -74,7 +74,7 @@ static long days_from_civil(int y, int m, int d)
     return era * 146097L + doe - 719468L;
 }
 
-static time_t epoch_of(int y, int mo, int d, int hh, int mm, int ss)
+time_t console_clock_epoch_of(int y, int mo, int d, int hh, int mm, int ss)
 {
     return (time_t)(days_from_civil(y, mo, d) * 86400L +
                     hh * 3600 + mm * 60 + ss);
@@ -114,7 +114,7 @@ static time_t build_epoch(void)
 
     sscanf(__TIME__, "%d:%d:%d", &hh, &mm, &ss);
 
-    return epoch_of(year, (int)(m - months) / 3 + 1, day, hh, mm, ss);
+    return console_clock_epoch_of(year, (int)(m - months) / 3 + 1, day, hh, mm, ss);
 }
 
 /* The last session's time, kept on the volume across reboots. */
@@ -326,7 +326,7 @@ static bool parse_datetime(const char *s, time_t deflt, time_t *out)
     if (hh > 23 || mm > 59 || ss > 59)
         return false;
 
-    *out = epoch_of(y, mo, d, hh, mm, ss);
+    *out = console_clock_epoch_of(y, mo, d, hh, mm, ss);
     return true;
 }
 
@@ -411,4 +411,12 @@ time_t console_clock_now(void)
      * charged to the clock.
      */
     return clock_base + (time_t)((time_us_64() - clock_boot_us) / 1000000ull);
+}
+
+void console_clock_now_us(time_t *sec, long *usec)
+{
+    uint64_t elapsed = time_us_64() - clock_boot_us;
+
+    *sec = clock_base + (time_t)(elapsed / 1000000ull);
+    *usec = (long)(elapsed % 1000000ull);
 }

@@ -87,25 +87,17 @@ static struct {
 static bool preserved_files[MAX_OPEN_FILES];
 
 /*
- * Time conversion is approximate: a packed FAT stamp is a local time with no
- * timezone, so fold it to a monotonic-ish value rather than a real date. The
- * game only compares two of these against each other, so every path must fold
- * the same way - one shared function for directory stamps and session dates.
+ * A packed FAT stamp is a local time with no timezone. It is converted with
+ * the clock's own calendar arithmetic, which applies no timezone either, so
+ * the result is ordinary Unix seconds in the same reckoning as time(): a
+ * program may compare a file's stat() time with a time it took itself, as
+ * Rogue does to detect a tampered save. (An earlier encoding folded the date
+ * into an order-preserving number that only compared with itself.)
  */
 static time_t fold_datetime(int year, int mon, int day,
                             int hour, int min, int sec)
 {
-    /*
-     * 64-bit arithmetic throughout: the folded value is far past 2^31, and
-     * time_t is 64 bits, so 32-bit math would wrap first and misorder.
-     */
-    uint64_t t = (uint64_t)year * 31536000u +
-                 (uint64_t)mon * 2592000u +
-                 (uint64_t)day * 86400u +
-                 (uint64_t)hour * 3600u +
-                 (uint64_t)min * 60u + (uint64_t)sec;
-
-    return (time_t)t;
+    return console_clock_epoch_of(year, mon, day, hour, min, sec);
 }
 
 static time_t filinfo_mtime(const FILINFO *fi)
@@ -298,9 +290,8 @@ int creat(const char *path, mode_t mode)
 }
 
 /*
- * The session clock in the same folded form filinfo_mtime() produces, so the
- * two compare. The real epoch is handed to mtime_store() alongside it, so a
- * listing can show a date rather than the comparison encoding.
+ * The session clock as stat() reports it: Unix seconds, limited to the range
+ * a FAT stamp can hold, so that it orders consistently with directory stamps.
  */
 static time_t fold_session(time_t now)
 {

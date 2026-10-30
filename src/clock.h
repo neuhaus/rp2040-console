@@ -19,6 +19,20 @@ void console_clock_init(void);
 time_t console_clock_now(void);
 
 /*
+ * The same clock with microseconds, for gettimeofday(). The seconds always
+ * agree with console_clock_now(), so a program comparing a time it took
+ * itself with a file's mtime sees one timeline rather than two.
+ */
+void console_clock_now_us(time_t *sec, long *usec);
+
+/*
+ * Unix seconds for a calendar date and time, with no timezone applied: the
+ * same reckoning the clock uses for the date typed at startup, so a FAT
+ * stamp converted with it compares directly with time().
+ */
+time_t console_clock_epoch_of(int y, int mo, int d, int hh, int mm, int ss);
+
+/*
  * Store the current session time on the volume, to be offered as the default
  * next boot. Called once the date is settled and again before rebooting.
  */

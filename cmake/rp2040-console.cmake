@@ -158,6 +158,7 @@ set(RP2040_CONSOLE_ROWS "24" CACHE STRING
 #
 #   NAME          target and output name
 #   ARGV0         what argv[0] holds (default: NAME)
+#   RESTORE_ARG   volume file passed as argv[1] when it exists at startup
 #   SOURCES       the game's own sources
 #   GENERATED     files generated into the build tree, produced by a custom
 #                 command in the game's own CMakeLists; passed straight to
@@ -177,15 +178,18 @@ set(RP2040_CONSOLE_ROWS "24" CACHE STRING
 #   COLS ROWS     terminal size to report         (default 80 24)
 #   LISTDIR       volume directory listed at startup (default: none)
 #   LEGACY_C      quiet the compiler about pre-ANSI idioms
+#   FLOATING_POINT  link the SDK's float/double support (default: none, which
+#                 panics at run time on the first floating-point operation)
 #   RENAMES       name=replacement, for a name in the program that clashes with
 #                 something else in the link; see the prefix header
 #
 function(rp2040_console_game)
-    set(options LEGACY_C LEGACY_TIME32 SOFT_REBOOT)
+    set(options LEGACY_C LEGACY_TIME32 SOFT_REBOOT FLOATING_POINT)
     set(oneValueArgs
             NAME
             ROOT
             ARGV0
+            RESTORE_ARG
             VOLUME_NAME
             FS_OFFSET
             FS_SIZE
@@ -471,6 +475,7 @@ function(rp2040_console_game)
             # plausible name rather than the empty string the runtime would
             # otherwise leave behind.
             RP2040_CONSOLE_ARGV0="${CG_ARGV0}"
+            $<$<BOOL:${CG_RESTORE_ARG}>:RP2040_CONSOLE_RESTORE_ARG="${CG_RESTORE_ARG}">
             RP2040_CONSOLE_LED="${RP2040_CONSOLE_LED}"
             RP2040_CONSOLE_CONNECT_WAIT_MS=${RP2040_CONSOLE_CONNECT_WAIT_MS}
             )
@@ -611,11 +616,20 @@ function(rp2040_console_game)
 
     # The legacy difftime adapter uses real double arithmetic. Unreferenced
     # routines are still discarded; native terminal builds retain no-float.
-    pico_set_float_implementation(${CG_NAME} none)
-    if(CG_LEGACY_TIME32)
+    # "none" links without complaint and panics ("double support is
+    # disabled") the first time the program does floating-point arithmetic,
+    # so a program that does any - Rogue scales damage by a double - must ask
+    # for FLOATING_POINT.
+    if(CG_FLOATING_POINT)
+        pico_set_float_implementation(${CG_NAME} pico)
         pico_set_double_implementation(${CG_NAME} pico)
     else()
-        pico_set_double_implementation(${CG_NAME} none)
+        pico_set_float_implementation(${CG_NAME} none)
+        if(CG_LEGACY_TIME32)
+            pico_set_double_implementation(${CG_NAME} pico)
+        else()
+            pico_set_double_implementation(${CG_NAME} none)
+        endif()
     endif()
 
     #

@@ -17,7 +17,9 @@
 #include <stdint.h>
 #include <string.h>
 #include <time.h>
+#include <stdlib.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <pwd.h>
@@ -41,6 +43,27 @@ time_t time(time_t *t)
         *t = now;
 
     return now;
+}
+
+/*
+ * The SDK's weak _gettimeofday() counts from the Unix epoch at boot, so it
+ * disagrees with time() above by decades. A program that stamps a save with
+ * gettimeofday() and checks it against the file's stat() mtime - which
+ * comes from the session clock - then decides every save has been
+ * tampered with. Answer from the same clock as time().
+ */
+int _gettimeofday(struct timeval *tv, void *tz)
+{
+    (void)tz;
+    if (tv != NULL) {
+        time_t sec;
+        long usec;
+
+        console_clock_now_us(&sec, &usec);
+        tv->tv_sec = sec;
+        tv->tv_usec = (suseconds_t)usec;
+    }
+    return 0;
 }
 
 int usleep(useconds_t usec)
@@ -134,12 +157,28 @@ char *getlogin(void)
     return NULL;
 }
 
-/* No password database exists. Leave player naming to the program. */
+/*
+ * No password database exists, and by default none is invented: player
+ * naming stays with the program. A program that dereferences getpwuid()
+ * unconditionally - old Unix games do, since a logged-in user always had an
+ * entry - can opt in by putting LOGNAME (and optionally HOME) in its
+ * manifest environment; uid 0 then has an entry carrying that name.
+ */
 struct passwd *getpwuid(uid_t uid)
 {
-    (void)uid;
-    errno = ENOENT;
-    return NULL;
+    static struct passwd pw;
+    const char *name = getenv("LOGNAME");
+
+    if (uid != 0 || name == NULL || *name == '\0') {
+        errno = ENOENT;
+        return NULL;
+    }
+    memset(&pw, 0, sizeof(pw));
+    pw.pw_name = (char *)name;
+    pw.pw_passwd = (char *)"";
+    pw.pw_dir = getenv("HOME") ? getenv("HOME") : (char *)"/";
+    pw.pw_shell = (char *)"";
+    return &pw;
 }
 
 struct passwd *getpwnam(const char *name)

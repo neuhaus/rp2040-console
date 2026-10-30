@@ -14,8 +14,8 @@
  * closed. It lives in a dot-file on the volume, so it survives the reboot
  * that the save itself has to survive.
  *
- * Each entry holds two things: the folded time_t that stat() reports, because
- * every source has to fold the same way to stay comparable, and the real
+ * Each entry holds two things: the time_t that stat() reports, clamped to the
+ * range of a FAT stamp so every source orders the same way, and the real
  * epoch, which is what a "last saved" listing wants to show. Only files the
  * engine wrote appear here. Anything else keeps its directory time.
  */

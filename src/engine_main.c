@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <sys/random.h>
+#include <sys/stat.h>
 
 #include <pico/stdlib.h>
 #include <pico/stdio.h>
@@ -167,6 +168,31 @@ static void engine_start(void)
 extern int rp2040_console_game_main(int argc, char **argv);
 
 /*
+ * A program that resumes a saved game only when given the save file on its
+ * command line (Rogue restores from argv[1]) has no way to be asked on this
+ * device. With RESTORE_ARG in the manifest, that file is passed as argv[1]
+ * when, and only when, it exists on the volume at the time the program
+ * starts; otherwise the program starts fresh with argv[0] alone.
+ */
+static int console_args(char **argv, char *name)
+{
+    int argc = 0;
+
+    argv[argc++] = name;
+#ifdef RP2040_CONSOLE_RESTORE_ARG
+    {
+        static char restore[] = RP2040_CONSOLE_RESTORE_ARG;
+        struct stat st;
+
+        if (stat(restore, &st) == 0 && S_ISREG(st.st_mode))
+            argv[argc++] = restore;
+    }
+#endif
+    argv[argc] = NULL;
+    return argc;
+}
+
+/*
  * The entry point. The C runtime calls this because it is the only main() in
  * the link; the program's own was renamed to rp2040_console_game_main.
  *
@@ -177,7 +203,8 @@ extern int rp2040_console_game_main(int argc, char **argv);
 int main(int argc, char **argv)
 {
 #ifndef RP2040_CONSOLE_SOFT_REBOOT
-    static char *console_argv[] = { RP2040_CONSOLE_ARGV0, NULL };
+    static char console_name[] = RP2040_CONSOLE_ARGV0;
+    static char *console_argv[3];
 #endif
 
     (void)argc;
@@ -189,14 +216,16 @@ int main(int argc, char **argv)
     for (;;) {
         /* New stack frames and argv each time; USB/clock/storage init run once. */
         char name[] = RP2040_CONSOLE_ARGV0;
-        char *argv[] = { name, NULL };
+        char *argv[3];
+        int args = console_args(argv, name);
         restart_note_boot();
         pid_init();
-        int status = rp2040_soft_run(1, argv);
+        int status = rp2040_soft_run(args, argv);
         restart_wait_soft(status);
     }
 #else
-    return rp2040_console_game_main(1, console_argv);
+    return rp2040_console_game_main(console_args(console_argv, console_name),
+                                    console_argv);
 #endif
 }
 

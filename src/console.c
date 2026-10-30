@@ -22,6 +22,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <termios.h>
+#include <errno.h>
+#include <sys/select.h>
 
 #include <pico/stdio.h>
 #include <pico/time.h>
@@ -32,11 +34,30 @@
 extern int __real_setvbuf(FILE *stream, char *buf, int mode, size_t size);
 extern void __real_setbuf(FILE *stream, char *buf);
 
+/*
+ * One raw byte read ahead by console_input_ready() and not yet delivered.
+ * The SDK's stdio has no way to look at input without taking it, so select()
+ * takes it and leaves it here; every read path empties this first.
+ */
+static int pending_input = -1;
+
+static int raw_getchar_timeout_us(uint32_t us)
+{
+    if (pending_input >= 0) {
+        int c = pending_input;
+
+        pending_input = -1;
+        return c;
+    }
+    return stdio_getchar_timeout_us(us);
+}
+
 void console_discard_input(void)
 {
+    pending_input = -1;
     /* Drain existing input, bounded even if a noisy UART keeps transmitting. */
     for (unsigned i = 0; i < 1024; ++i)
-        if (stdio_getchar_timeout_us(0) < 0) break;
+        if (raw_getchar_timeout_us(0) < 0) break;
 }
 
 /*
@@ -120,7 +141,7 @@ static int process_input(int c, int *keep)
 int console_getchar(void)
 {
     for (;;) {
-        int c = stdio_getchar();
+        int c = pending_input >= 0 ? raw_getchar_timeout_us(0) : stdio_getchar();
 
         if (c < 0)
             return c;           /* PICO_ERROR_TIMEOUT or PICO_ERROR_NO_DATA */
@@ -140,7 +161,7 @@ int console_getchar(void)
 static int console_getchar_nowait(void)
 {
     for (;;) {
-        int c = stdio_getchar_timeout_us(0);
+        int c = raw_getchar_timeout_us(0);
 
         if (c < 0)
             return -1;
@@ -151,6 +172,28 @@ static int console_getchar_nowait(void)
         if (keep)
             return c;
     }
+}
+
+int console_input_ready(int64_t timeout_us)
+{
+    if (pending_input >= 0)
+        return 1;
+
+    int c;
+
+    if (timeout_us < 0) {
+        c = stdio_getchar();
+    } else {
+        absolute_time_t until = make_timeout_time_us((uint64_t)timeout_us);
+
+        do {
+            c = stdio_getchar_timeout_us(0);
+        } while (c < 0 && !time_reached(until));
+    }
+    if (c < 0)
+        return 0;
+    pending_input = c;
+    return 1;
 }
 
 /*
@@ -184,6 +227,46 @@ int console_read(void *buf, size_t count)
     }
 
     return (int)n;
+}
+
+/*
+ * select() as a terminal program uses it: to ask whether a key is waiting,
+ * typically to tell an arrow-key sequence from a lone ESC. Only the console
+ * can ever be not ready; files and output are always ready, which is true of
+ * a disk file on Unix as well. Exception sets are never reported.
+ */
+int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
+           struct timeval *timeout)
+{
+    int64_t wait_us = -1;
+    int ready = 0;
+
+    if (nfds < 0 || nfds > FD_SETSIZE) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (timeout != NULL)
+        wait_us = (int64_t)timeout->tv_sec * 1000000 + timeout->tv_usec;
+
+    /* Everything other than console input is ready immediately. */
+    for (int fd = 0; fd < nfds; fd++) {
+        if (readfds && FD_ISSET(fd, readfds) && fd != 0)
+            ready++;
+        if (writefds && FD_ISSET(fd, writefds))
+            ready++;
+    }
+    if (exceptfds)
+        FD_ZERO(exceptfds);
+
+    if (readfds && nfds > 0 && FD_ISSET(0, readfds)) {
+        if (console_input_ready(ready ? 0 : wait_us))
+            ready++;
+        else
+            FD_CLR(0, readfds);
+    } else if (!ready && wait_us > 0) {
+        sleep_us((uint64_t)wait_us);
+    }
+    return ready;
 }
 
 /*

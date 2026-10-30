@@ -17,14 +17,14 @@
 #include "trace.h"
 
 #define mtime_file   ".mtimes"
-#define mtime_magic  0x334D544DU   /* "MTM3": folded time + real epoch */
+#define mtime_magic  0x344D544DU   /* "MTM4": stat() time + real epoch */
 #define mtime_max    32
 #define mtime_path   64
 #define mtime_reclen (mtime_path + 8 + 8)
 
 struct mtime_rec {
     char path[mtime_path];
-    int64_t mtime;   /* folded, for stat() comparisons */
+    int64_t mtime;   /* as stat() reports it */
     int64_t epoch;   /* real Unix time, for display */
 };
 

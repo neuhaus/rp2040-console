@@ -39,9 +39,11 @@ produces the data volume, and both are flashed in either order. The arguments:
 | `DATA_DIRS` | directories to create on the volume |
 | `LISTDIR` | volume directory listed at startup with size and remembered date (default: none) |
 | `ARGV0` | what `argv[0]` holds (default: `NAME`) |
+| `RESTORE_ARG` | volume file passed as `argv[1]` only when it exists at startup, for programs that resume a save given on the command line |
 | `HEAP_END` | top of the heap; see the memory map below |
 | `COLS`, `ROWS` | what the terminal reports its size as (default 80x24) |
 | `LEGACY_C` | silence the diagnostics that pre-ANSI sources provoke |
+| `FLOATING_POINT` | link the SDK's float/double routines; without it the first floating-point operation panics at run time (`double support is disabled`) |
 | `LEGACY_TIME32` | checked 32-bit time API for program sources |
 | `SOFT_REBOOT` | restart a single-threaded C program while retaining USB/platform state |
 | `SYSTEM_HEADERS` | native declarations to preload before program renames |
@@ -102,6 +104,12 @@ speed zero follows output speed; unsupported speed codes return `EINVAL`.
 
 The single-user surface reports uid/gid zero, but invents no login or password
 database: `getlogin`, `getpwuid` and `getpwnam` return NULL with `ENOENT`.
+A program that dereferences `getpwuid(getuid())` unconditionally can opt in
+with `LOGNAME=name` (and optionally `HOME`) in its manifest `ENV`; uid 0 then
+has an entry with that name. `select()` reports console input readiness
+(with a timeout) without consuming it; files and output are always ready.
+`gettimeofday()` answers from the same session
+clock as `time()` and file mtimes, not the SDK's since-boot counter.
 `chmod`/`fchmod` validate existence/descriptors without changing Unix permission
 bits, which FatFs cannot represent. `umask` remembers and returns its previous
 API value; it cannot enforce FAT permissions. There are still no subprocesses,

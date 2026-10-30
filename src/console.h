@@ -1,6 +1,7 @@
 #ifndef RP2040_CONSOLE_CONSOLE_H
 #define RP2040_CONSOLE_CONSOLE_H
 
+#include <stdint.h>
 #include <termios.h>
 
 /*
@@ -25,6 +26,13 @@ void console_write(const void *buf, size_t count);
  * returns what is waiting, at most a line. What read() does for fd 0.
  */
 int console_read(void *buf, size_t count);
+
+/*
+ * Whether a character can be read without blocking, waiting up to timeout_us
+ * for one (negative: wait indefinitely). A character found is kept for the
+ * next read rather than consumed. What select() on fd 0 reports.
+ */
+int console_input_ready(int64_t timeout_us);
 
 /*
  * The terminal state the engine claims to enforce. The input path reads it to
