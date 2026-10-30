@@ -44,11 +44,15 @@
                          /* define for platforms using the GNU libraries */
                          /* linux, etc .. */
  
-@@ -80,2 +80,2 @@
+@@ -78,6 +78,6 @@
+  */
+ 
 -/* #define NO_FILE_LINKS	/* if no hard links */
 -/* #define LOCKDIR "/usr/games/lib/nethackdir"	/* where to put locks */
 +#define NO_FILE_LINKS /* FAT has no hard links */
 +#define LOCKDIR "/" /* lock files live in the mounted volume */
+ 
+ 
 @@ -107,7 +107,7 @@
   * A stat system call is done on the mailbox every MAILCKFREQ moves.
   */

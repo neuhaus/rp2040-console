@@ -1,0 +1,169 @@
+--- a/src/save.c
++++ b/src/save.c
+@@ -473,6 +473,8 @@
+  * file is written out.
+  */
+ 
++#include "../tamp-codec.h"
++
+ #define RLESC '\0'    /* Leading character for run of LRESC's */
+ #define flushoutrun(ln) (bputc(RLESC), bputc(ln), ln = -1)
+ 
+@@ -499,7 +501,7 @@
+       return;
+ #endif
+     if (outbufp >= sizeof outbuf) {
+-	(void) write(bwritefd, outbuf, sizeof outbuf);
++	nh_codec_write(bwritefd, outbuf, sizeof outbuf);
+ 	outbufp = 0;
+     }
+     outbuf[outbufp++] = (unsigned char)c;
+@@ -513,7 +515,7 @@
+ # pragma unused(fd)
+ #endif
+ {
+-    return;
++    nh_codec_begin(fd);
+ }
+ 
+ void
+@@ -528,10 +530,10 @@
+ #ifdef MFLOPPY
+ 	  if (!count_only)    /* flush buffer */
+ #endif
+-		  (void) write(fd, outbuf, outbufp);
++		  nh_codec_write(fd, outbuf, outbufp);
+ 	  outbufp = 0;
+       }
+-      /*printf("bflush()"); getret();*/
++      nh_codec_flush(fd);
+ }
+ 
+ void
+@@ -563,6 +565,7 @@
+ {
+     if (outbufp)
+ 	panic("closing file with buffered data still unwritten");
++    nh_codec_end(fd);
+     (void) close(fd);
+ }
+ 
+--- a/src/restore.c
++++ b/src/restore.c
+@@ -853,63 +853,40 @@
+ }
+ 
+ #ifdef ZEROCOMP
+-#define RLESC '\0'	/* Leading character for run of RLESC's */
+-
+-#ifndef ZEROCOMP_BUFSIZ
+-#define ZEROCOMP_BUFSIZ BUFSZ
+-#endif
+-static NEARDATA unsigned char inbuf[ZEROCOMP_BUFSIZ];
+-static NEARDATA unsigned short inbufp = 0;
+-static NEARDATA unsigned short inbufsz = 0;
+-static NEARDATA short inrunlength = -1;
+-static NEARDATA int mreadfd;
+-
+-static int
+-mgetc()
+-{
+-    if (inbufp >= inbufsz) {
+-	inbufsz = read(mreadfd, (genericptr_t)inbuf, sizeof inbuf);
+-	if (!inbufsz) {
+-	    if (inbufp > sizeof inbuf)
+-		error("EOF on file #%d.\n", mreadfd);
+-	    inbufp = 1 + sizeof inbuf;  /* exactly one warning :-) */
+-	    return -1;
+-	}
+-	inbufp = 0;
+-    }
+-    return inbuf[inbufp++];
+-}
+-
++#include "../tamp-codec.h"
++static short inrunlength = -1;
+ void
+ minit()
+ {
+-    inbufsz = 0;
+-    inbufp = 0;
++    nh_codec_reset();
+     inrunlength = -1;
+ }
+-
+ int
+ mread(fd, buf, len)
+ int fd;
+ genericptr_t buf;
+-register unsigned len;
+-{
+-    /*register int readlen = 0;*/
+-    mreadfd = fd;
+-    while (len--) {
+-	if (inrunlength > 0) {
+-	    inrunlength--;
+-	    *(*((char **)&buf))++ = '\0';
+-	} else {
+-	    register short ch = mgetc();
+-	    if (ch < 0) return -1; /*readlen;*/
+-	    if ((*(*(char **)&buf)++ = ch) == RLESC) {
+-		inrunlength = mgetc();
+-	    }
+-	}
+-	/*readlen++;*/
++unsigned int len;
++{
++    unsigned int produced = 0;
++    unsigned char *out = (unsigned char *)buf;
++    while (produced < len) {
++        unsigned char ch;
++        if (inrunlength > 0) {
++            --inrunlength;
++            out[produced++] = 0;
++        } else {
++            if (nh_codec_read(fd, &ch, 1) < 0) {
++                if (produced || len != 1) panic("truncated saved record");
++                return -1; /* the ledger-byte read at the end of a save */
++            }
++            out[produced++] = ch;
++            if (!ch) {
++                if (nh_codec_read(fd, &ch, 1) < 0) panic("truncated zero run");
++                inrunlength = ch;
++            }
++        }
+     }
+-    return 0; /*readlen;*/
++    return 0;
+ }
+ 
+ #else /* ZEROCOMP */
+--- a/sys/unix/unixunix.c
++++ b/sys/unix/unixunix.c
+@@ -4,6 +4,7 @@
+ 
+ /* This file collects some Unix dependencies */
+ 
++#include "../../tamp-codec.h"
+ #include "hack.h"	/* mainly for index() which depends on BSD */
+ 
+ #include <errno.h>
+@@ -86,11 +87,13 @@
+ 		wait_synch();
+ 		return(0);
+ 	}
+-	if(buf.st_mtime < hbuf.st_mtime) {
+-		pline("Saved level is out of date. ");
+-		wait_synch();
+-		return(0);
+-	}
++	if (!nh_codec_valid(fd)) {
++		pline("Saved game uses an incompatible storage format.");
++		return 0;
++	}
++	/* The FAT nethack file is a placeholder, not an executable.
++	 * Session clock and image creation dates are not a save version.
++	 * The storage header and frame checks define compatibility. */
+ 	return(1);
+ }
+ 

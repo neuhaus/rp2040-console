@@ -15,11 +15,17 @@ COMMIT = 'df89f069705251b66c74322ed01b3d30d670979e'
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, help='Existing Vanilla-NetHack Git checkout (left unchanged)')
-    parser.add_argument('--build-dir', type=Path, default=CONSOLE / 'build/nethack-3.1.3')
+    parser.add_argument('--build-dir', type=Path)
     parser.add_argument('--soft-reboot', action='store_true')
+    parser.add_argument('--qemu-generators', action='store_true',
+                        help='Run ARM/newlib ILP32 data generators under QEMU (also on Apple Silicon)')
+    parser.add_argument('--sram-diagnostics', action='store_true', help='Build the maximum-branch wizard hardware workload')
     parser.add_argument('--jobs', type=int, default=4)
     args = parser.parse_args()
-    work = args.build_dir.resolve()
+    if args.sram_diagnostics and args.soft_reboot:
+        parser.error('--sram-diagnostics measures hardware restart; use it without --soft-reboot')
+    default_dir = 'nethack-3.1.3-diagnostic' if args.sram_diagnostics else 'nethack-3.1.3'
+    work = (args.build_dir or CONSOLE / 'build' / default_dir).resolve()
     if args.jobs < 1:
         parser.error('--jobs must be positive')
     # Never unpack upstream sources over an unrelated/user-maintained directory.
@@ -45,14 +51,24 @@ def main():
     run(['tar', '-xf', archive, '-C', src])
     archive.unlink()
     run(['patch', '-p1', '-i', HERE / 'port/config.patch'])
+    run(['patch', '-p1', '-i', HERE / 'port/storage.patch'])
     for item in (HERE / 'port').iterdir():
-        if item.name != 'config.patch':
+        if item.is_file() and item.suffix != '.patch':
             shutil.copy2(item, src / item.name)
+
+    if args.sram_diagnostics:
+        import runpy
+        runpy.run_path(str(HERE / 'port/diagnostics.py'))['prepare'](src, HERE / 'port')
 
     # Compiler and runner are argument lists, never shell-evaluated commands.
     cc = shlex.split(os.environ.get('HOST_CC', 'gcc'))
     flags = shlex.split(os.environ.get('HOST_CFLAGS', '-m32'))
     runner = shlex.split(os.environ.get('HOST_RUNNER', ''))
+    if args.qemu_generators:
+        host = HERE.parent / 'nethack-3.6.7/port/host'
+        cc = ['python3', str(host / 'host32_cc.py')]
+        flags = []
+        runner = ['python3', str(host / 'host32_run.py')]
     env = os.environ.copy()
     if os.environ.get('HOST_LD_LIBRARY_PATH'):
         env['LD_LIBRARY_PATH'] = os.environ['HOST_LD_LIBRARY_PATH']

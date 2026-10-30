@@ -2,9 +2,9 @@
 
 Source: [Vanilla-NetHack/NetHack](https://github.com/Vanilla-NetHack/NetHack),
 commit `df89f069705251b66c74322ed01b3d30d670979e`.
-The recipe applies configuration changes in a private generated source tree and
-adds the CMake manifest, compatibility header, RNG adapter and layout probes.
-Upstream game C files and the supplied Git checkout remain unchanged. Keep the
+The recipe applies configuration and storage patches in a private generated
+source tree and adds the CMake manifest, compatibility header, RNG adapter and
+layout probes. The supplied upstream Git checkout remains unchanged. Keep the
 upstream `dat/license` with distributions; it is included in the FAT image.
 
 ## Build
@@ -17,6 +17,13 @@ sudo apt install gcc-multilib libc6-dev-i386 bison flex patch
 python3 applications/nethack-3.1.3/build.py
 # Or reuse an existing upstream Git checkout:
 python3 applications/nethack-3.1.3/build.py --source /path/to/nethack
+```
+
+On Apple Silicon (or another host without a compatible 32-bit compiler), install
+`qemu-system-arm` and use the included ARM/newlib semihosted generators:
+
+```sh
+python3 applications/nethack-3.1.3/build.py --qemu-generators
 ```
 
 Run the build commands from the console repository root with `PICO_SDK_PATH` set.
@@ -53,7 +60,7 @@ Default outputs are under `build/nethack-3.1.3/hardware/`:
 The build generates all game data, checks 77 host/ARM sizes and offsets, validates
 firmware/heap/stack bounds, checks FAT with fsck and verifies UF2 addresses and
 family IDs. `HEAP_END=0x2003c000` leaves 24 KB above the heap for stack/SDK scratch;
-actual stack peaks are unmeasured. The manifest uses `LEGACY_C`, `LEGACY_TIME32`
+measured hardware peaks and limits are recorded in [RESULTS.md](RESULTS.md). The manifest uses `LEGACY_C`, `LEGACY_TIME32`
 and `RENAMES panic=nh_panic`.
 The configuration enables `NO_FILE_LINKS` with `LOCKDIR="/"`, so NetHack
 creates lock files exclusively instead of requesting hard links unsupported by
@@ -73,8 +80,66 @@ Outputs then go to `build/nethack-3.1.3/soft/` with the same filenames and flash
 layout. Hardware reboot is the default. Read the [supported single-threaded C profile](../../INTERNALS.md#optional-soft-reboot)
 before enabling soft reboot.
 
-Both firmware modes and image checks are tested in the cloud. The underlying
-platform restart passed 60 ARM/newlib sessions; the separately hosted game was
-tested for new game/save/restore. This recipe builds ARM images and does not
-run that hosted gameplay test. Physical Pico boot, USB continuity, flash writes,
-full game sessions and peak RAM usage remain unverified.
+Both restart modes pass the local ARM build and image checks. Physical soft
+restart remains unverified. The hardware workload and its limits are recorded
+in [RESULTS.md](RESULTS.md).
+
+## Storage format
+
+Levels, bones and saves retain NetHack's RLE/zero-run encoding and then use
+framed Tamp compression. Each frame holds at most 1 KiB of input and has a
+CRC32; an end marker detects truncated streams. All codec writes are checked.
+The independent encoder and decoder use fixed SRAM buffers and no heap.
+Tamp 2.5.0 is shared with the 3.6.7 recipe; retain its
+[MIT license and provenance](../nethack-3.6.7/port/tamp/UPSTREAM.md).
+
+The original port could silently restore empty level files when it ran out of
+flash while retaining both the combined save and reconstructed dungeon. This
+format reduces both copies enough for the measured workload and rejects short
+writes instead of reporting a successful restore of missing levels.
+
+**Older saves and bones are incompatible. Flash both images and start a new
+game when upgrading.** The save still contains the whole dungeon and restore
+still needs room for the save plus reconstructed levels. Storage use remains
+bounded by the 1 MiB FAT volume; unusual object populations can exceed the
+measured workload. Save before disconnecting; FAT writes are not power-loss safe.
+
+## Regression and hardware tests
+
+The codec test compiles the actual patched save/restore adapters with native
+AddressSanitizer and UndefinedBehaviorSanitizer. Use a generated source tree
+from a completed build:
+
+```sh
+python3 applications/nethack-3.1.3/tests/test-codec.py \
+  --source build/nethack-3.1.3/source
+```
+
+Build a separate maximum-branch wizard image for destructive board testing:
+
+```sh
+python3 applications/nethack-3.1.3/build.py --qemu-generators \
+  --sram-diagnostics --build-dir build/ascension
+```
+
+Flash both diagnostic images, close other serial terminals, set `PICOTOOL` if
+needed, and run each stage in order from the console repository root:
+
+```sh
+python3 applications/nethack-3.1.3/tests/hardware.py tour --out build/results
+python3 applications/nethack-3.1.3/tests/hardware.py checkpoint --out build/results
+python3 applications/nethack-3.1.3/tests/hardware.py revisit --out build/results
+python3 applications/nethack-3.1.3/tests/hardware.py planes --out build/results
+```
+
+The stages carry 150 test objects, visit all 77 non-endgame levels, restore and
+verify every cached level, revisit/map the full dungeon, then checkpoint on each
+of the five planes. Logs, FAT snapshots and before/after counts are retained.
+The final Astral checkpoint places the character at a co-aligned high altar for
+the ordinary `#offer` command. Forced wizard travel tests storage and execution;
+it does not replace a naturally played combat ascension.
+
+Diagnostics are disabled in ordinary builds. Without `--build-dir`, diagnostic
+outputs use `build/nethack-3.1.3-diagnostic/`. Do not combine diagnostics with
+`--soft-reboot`. Diagnostic command names automatically complete in 3.1.3;
+the driver sends their shortest unambiguous prefixes.
