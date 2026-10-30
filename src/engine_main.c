@@ -38,6 +38,7 @@
 #include "restart.h"
 #include "clock.h"
 #include "boot.h"
+#include "ask_env.h"
 #ifdef RP2040_CONSOLE_SOFT_REBOOT
 #include "rp2040-soft-reboot.h"
 #endif
@@ -224,6 +225,7 @@ int main(int argc, char **argv)
         restart_wait_soft(status);
     }
 #else
+    console_ask_env();
     return rp2040_console_game_main(console_args(console_argv, console_name),
                                     console_argv);
 #endif

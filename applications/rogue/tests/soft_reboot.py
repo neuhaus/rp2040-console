@@ -91,6 +91,9 @@ def wait_game(mark):
         if not answered and b'Enter for' in tail and tail.rstrip().endswith(b':'):
             s.send('\r')
             answered = True
+        if b'Who are you?' in tail[-60:] and tail.rstrip().endswith(b']'):
+            s.send('\r')               # keep the remembered name
+            mark = len(s.raw)
         if b'Press any key for a new game' in tail[-200:]:
             s.send(' ')
             mark = len(s.raw)

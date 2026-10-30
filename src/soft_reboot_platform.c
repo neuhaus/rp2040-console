@@ -10,6 +10,7 @@
 #include "console.h"
 #include "env.h"
 #include "storage.h"
+#include "ask_env.h"
 
 extern unsigned char __rp2040_program_data_start[], __rp2040_program_data_end[];
 extern unsigned char __rp2040_program_data_load[];
@@ -30,6 +31,8 @@ void rp2040_soft_restore(void)
     console_reset_terminal();
     console_rawout("\033(B\033>");
     console_discard_input();
+    /* After env_reset(), so the answer is this session's. */
+    console_ask_env();
 }
 
 void rp2040_soft_platform_cleanup(void)

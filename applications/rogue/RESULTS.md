@@ -29,9 +29,9 @@ in Rogue:
 
 | Build | Firmware | Static SRAM | Heap budget | Stack reserve |
 | --- | ---: | ---: | ---: | ---: |
-| Ordinary | 247,600 B | 53,116 B | 184,452 B | 32,768 B |
-| Diagnostic (`ROGUE_DIAG`) | 248,712 B | 53,136 B | 184,432 B | 32,768 B |
-| Soft reboot | 256,344 B | 54,512 B | 183,056 B | 32,768 B |
+| Ordinary | 248,288 B | 53,116 B | 184,452 B | 32,768 B |
+| Diagnostic (`ROGUE_DIAG`) | 249,400 B | 53,136 B | 184,432 B | 32,768 B |
+| Soft reboot | 257,032 B | 54,512 B | 183,056 B | 32,768 B |
 
 The firmware uses 16% of the 1.5 MB below the data volume.
 
@@ -48,15 +48,14 @@ Memory was sampled on every level: 200 samples in all.
 
 | Measure | Peak | Budget |
 | --- | ---: | ---: |
-| Heap in use (`mallinfo`) | 4,112 B | 184,452 B |
+| Heap in use (`mallinfo`) | 4,176 B | 184,452 B |
 | Heap arena grown | 8,304 B | 184,452 B |
 | Least heap left to grow | 176,128 B | — |
-| Stack depth | 6,216 B | 32,768 B |
-| Floor objects on one level | 19 (level 75) | — |
-| Monsters on one level | 25 (level 66) | — |
+| Stack depth | 6,504 B | 32,768 B |
+| Floor objects on one level | 21 (level 55) | — |
+| Monsters on one level | 24 (level 17) | — |
 
-The stack peak came from the save path; the deepest gameplay frame used
-5,216 B. Because Rogue discards each level, these numbers do not grow with
+The stack peak includes the save and score paths. Because Rogue discards each level, these numbers do not grow with
 depth: level 99 needed no more than level 30.
 
 ### Staircase commands (wizard mode off)
@@ -74,11 +73,11 @@ depth: level 99 needed no more than level 30.
 
 | Checkpoint | Level | Pack | Save file | Volume free | FAT | Restore |
 | --- | ---: | ---: | ---: | ---: | --- | --- |
-| deep | 99 | 23 entries, full, with Amulet | 9,543 B | 491,520 B | clean | identical (DIAG) |
-| surface | 1, on the stairs | 23 entries, with Amulet | 8,871 B | 492,032 B | clean | identical (ordinary firmware: level, HP, Amulet) |
+| deep | 99 | 24 entries, full, with Amulet | 9,567 B | 491,008 B | clean | identical (DIAG) |
+| surface | 1, on the stairs | 24 entries, with Amulet | 9,119 B | 491,520 B | clean | identical (ordinary firmware: level, HP, Amulet) |
 
-The pack held 23 entries when the game reported `pack full`. Rogue counts
-stacked items toward its limit of 24.
+The game reported `pack full` at its limit of 24, which counts stacked
+items; in an earlier run the same limit was reached with 23 entries.
 
 ### Win and scores
 
@@ -106,10 +105,18 @@ first so that the restore deletes the save. The other sessions quit.
 | USB connection after each exit | the same device for all 30 sessions |
 | sessions that followed a save | 10 of 10 restored at the saved level, pack and HP |
 | sessions that followed a quit | 20 of 20 fresh: level 1, max level 1, wizard off |
-| least heap left to grow, session 1 → 30 | 176,128 B → 176,128 B |
-| heap arena, session 1 → 30 | 6,904 B → 6,904 B |
+| least heap left to grow, session 1 → 30 | 180,224 B → 176,128 B |
+| heap arena, session 1 → 30 | 2,808 B → 6,904 B |
 
-All 61 checks passed. The stack peaked at 4,912 B.
+All 61 checks passed. The arena grew once, by 4 KB, between the first and
+second session, the first save, and was then flat for the remaining 28
+sessions; an earlier run was flat from the first session. The stack peaked
+at 4,624 B.
+
+Every boot and every soft-reboot session asked "Who are you?" (`ASK_ENV`).
+The tests pressed Enter to keep the remembered name, which a restore
+requires. A separate check on the soft-reboot firmware typed a new name: the
+quit was scored under it, and the next session offered it as the default.
 
 ## Limits
 
@@ -128,8 +135,8 @@ All 61 checks passed. The stack peaked at 4,912 B.
 
 ## Artifact checksums (SHA-256)
 
-- `rogue.uf2` (ordinary, used for the win): `d0808a2fa8ae78ddc90bc236911af763d0814bbe020253295ea1e1c1e8227577`
-- `rogue-volume.uf2`: `737bb8f5724bbc1dbe76ff35a9f691931b6a2066b913de2b82a05f218ea01f03`
-- diagnostic `rogue.uf2`: `4af6eae92aca4280007f6ea38cd077528f870e448e8d61d7b3e25defd4c6d369`
-- soft-reboot `rogue.uf2`: `fef66f14c110cf77af1b3b6bf54811f1b66eee4cf3b72c94c003b6fc8931a4b6`
-- soft-reboot diagnostic `rogue.uf2`: `18528654b18d37a52d13d2a12eebb31f244f2877abc80297ab6aadcdbe5e5fc3`
+- `rogue.uf2` (ordinary, used for the win): `2e493c48fc1f561b6010186810d5d1c34f0010ecb0d1ead34b9a9a5cfbfb98df`
+- `rogue-volume.uf2`: `c211ae30d8e092e10ef303630f9960ea9233fa2bebc348a1ca2a5530c227734a`
+- diagnostic `rogue.uf2`: `74031bbce4cfd788df9fd017fd7ffb68ab8873233b91f66767a882ddb4396dcd`
+- soft-reboot `rogue.uf2`: `ca3ca12a139e0ef4118c0f3874256618152d999067b2050cd95df5b13765ba18`
+- soft-reboot diagnostic `rogue.uf2`: `2a2b244747bb8c82009ad0d72ed68cb04cfc3a7f2c9b82f516a3c537966017ca`

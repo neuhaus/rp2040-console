@@ -39,6 +39,8 @@ produces the data volume, and both are flashed in either order. The arguments:
 | `DATA_DIRS` | directories to create on the volume |
 | `LISTDIR` | volume directory listed at startup with size and remembered date (default: none) |
 | `ARGV0` | what `argv[0]` holds (default: `NAME`) |
+| `ASK_ENV` | environment variable asked for on the console before each run (boot, and each soft-reboot session); the default is the last answer, remembered in `/.askenv`, else the `ENV` value |
+| `ASK_PROMPT` | the question `ASK_ENV` asks (default `Who are you?`) |
 | `RESTORE_ARG` | volume file passed as `argv[1]` only when it exists at startup, for programs that resume a save given on the command line |
 | `HEAP_END` | top of the heap; see the memory map below |
 | `COLS`, `ROWS` | what the terminal reports its size as (default 80x24) |

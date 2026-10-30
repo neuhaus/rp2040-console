@@ -159,6 +159,9 @@ set(RP2040_CONSOLE_ROWS "24" CACHE STRING
 #   NAME          target and output name
 #   ARGV0         what argv[0] holds (default: NAME)
 #   RESTORE_ARG   volume file passed as argv[1] when it exists at startup
+#   ASK_ENV       environment variable asked for on the console before each
+#                 run, e.g. LOGNAME for a program with no name prompt
+#   ASK_PROMPT    the question for ASK_ENV (default "Who are you?")
 #   SOURCES       the game's own sources
 #   GENERATED     files generated into the build tree, produced by a custom
 #                 command in the game's own CMakeLists; passed straight to
@@ -190,6 +193,8 @@ function(rp2040_console_game)
             ROOT
             ARGV0
             RESTORE_ARG
+            ASK_ENV
+            ASK_PROMPT
             VOLUME_NAME
             FS_OFFSET
             FS_SIZE
@@ -325,6 +330,7 @@ function(rp2040_console_game)
             "${RP2040_CONSOLE_SRC}/probes.c"
             "${RP2040_CONSOLE_SRC}/restart.c"
             "${RP2040_CONSOLE_SRC}/clock.c"
+            "${RP2040_CONSOLE_SRC}/ask_env.c"
             "${RP2040_CONSOLE_SRC}/boot.c"
             "${RP2040_CONSOLE_SRC}/env.c"
             "${RP2040_CONSOLE_SRC}/entropy.c"
@@ -476,6 +482,8 @@ function(rp2040_console_game)
             # otherwise leave behind.
             RP2040_CONSOLE_ARGV0="${CG_ARGV0}"
             $<$<BOOL:${CG_RESTORE_ARG}>:RP2040_CONSOLE_RESTORE_ARG="${CG_RESTORE_ARG}">
+            $<$<BOOL:${CG_ASK_ENV}>:RP2040_CONSOLE_ASK_ENV="${CG_ASK_ENV}">
+            $<$<BOOL:${CG_ASK_PROMPT}>:RP2040_CONSOLE_ASK_PROMPT="${CG_ASK_PROMPT}">
             RP2040_CONSOLE_LED="${RP2040_CONSOLE_LED}"
             RP2040_CONSOLE_CONNECT_WAIT_MS=${RP2040_CONSOLE_CONNECT_WAIT_MS}
             )

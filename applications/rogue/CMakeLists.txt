@@ -96,6 +96,9 @@ rp2040_console_game(
     ENV          TERM=xterm TERMCAP=/rogue.termcap LOGNAME=rogue HOME=/
                  ROGUEOPTS=${_rogueopts}
     RESTORE_ARG  rogue.save
+    # Rogue has no name prompt of its own: ask at startup, offering the last
+    # name (or "rogue"), which restoring a save requires to match.
+    ASK_ENV      LOGNAME
     DATA_FILES   rogue.instr rogue.termcap
     EMPTY_FILES  rogue.scores
     VOLUME_NAME  ROGUE

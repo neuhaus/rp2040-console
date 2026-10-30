@@ -32,9 +32,11 @@ The environment sets:
 
 - `TERM=xterm` and `TERMCAP=/rogue.termcap`, so Rogue's curses reads the
   entry from the volume.
-- `LOGNAME=rogue` and `HOME=/`. `md_gln()` dereferences `getpwuid()` without
-  checking for NULL. Every score is recorded under `rogue`, the name a Unix
-  login would have supplied; `ROGUEOPTS=name=...` sets another display name.
+- `LOGNAME=rogue` and `HOME=/`. Rogue takes the player's name from the login
+  name (`md_gln()`, through `getpwuid()`) and has no name prompt of its own.
+  `ASK_ENV LOGNAME` makes the platform ask "Who are you?" before each game,
+  offering the last name entered (or `rogue`) as the default. Restoring a
+  save requires the same name as the one that made it.
 - `ROGUEOPTS=file=rogue.save`, which makes `rogue.save` the save prompt's
   default. The `ROGUE_EXTRA_OPTIONS` cache variable (empty by default) adds
   more comma-separated entries after it, e.g.
@@ -59,6 +61,7 @@ Rogue's sources.
 | `stat()` reports Unix seconds | It used to report an order-preserving encoding that compared only with itself. Rogue compares a save's mtime with the time stored inside it ("file has been touched"). The `.mtimes` table format moved to `MTM4`; older tables are discarded. |
 | `getpwuid()` returns an entry when `LOGNAME` is set | This is opt-in, so programs without `LOGNAME` see no change. |
 | `RESTORE_ARG` manifest option | Passes a save file as `argv[1]` only when it exists. |
+| `ASK_ENV` / `ASK_PROMPT` manifest options | Ask for an environment variable on the console before each run, defaulting to the last answer. Rogue uses it for `LOGNAME`. |
 | `FLOATING_POINT` manifest option | The default "none" float/double implementation links cleanly but panics (`double support is disabled`) at the first floating-point operation. Rogue hit this the first time a monster struck the player. |
 
 ## Soft reboot

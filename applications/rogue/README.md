@@ -37,11 +37,12 @@ Reflashing the volume deletes the saved game and the scores.
 
 Open the USB serial port in an 80x24 terminal, for example
 `screen /dev/cu.usbmodem*` on macOS or `screen /dev/ttyACM0` on Linux. Press
-Enter at the date prompt to start.
+Enter at the date prompt, then type your name at "Who are you?". Enter alone
+keeps the name shown in brackets, the last one used.
 
 - `?` lists the commands. Arrow keys move as well as `hjklyubn`.
 - `S` saves: press Enter to accept `rogue.save`. The board then restarts and
-  resumes the saved game on the next boot.
+  resumes the saved game on the next boot, for the same name.
 - `Q` quits. Finished games are recorded in the score file.
 
 Save or quit before unplugging the board. Writes to flash are not safe

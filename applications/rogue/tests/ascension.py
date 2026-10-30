@@ -116,6 +116,9 @@ def boot(name):
         if b'Enter for' in tail and tail.rstrip().endswith(b':'):
             s.send('\r')
             s.raw.clear()
+        if b'Who are you?' in tail and tail.rstrip().endswith(b']'):
+            s.send('\r')               # keep the remembered name
+            s.raw.clear()
         if re.search(r'Level: *\d+', s.screen.line(23)):
             s.settle(.5)
             more()

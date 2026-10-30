@@ -26,6 +26,7 @@
 #include <sys/select.h>
 
 #include <pico/stdio.h>
+#include <pico/stdlib.h>
 #include <pico/time.h>
 
 #include "console.h"
@@ -227,6 +228,51 @@ int console_read(void *buf, size_t count)
     }
 
     return (int)n;
+}
+
+/*
+ * One line of input. Returns the length, or 0 for "nothing entered" -
+ * which covers Enter on an empty line, ^C, and running out of patience
+ * before the first character.
+ *
+ * Backspace rewinds and sends "\b \b" so the host terminal rubs out its own
+ * echo.
+ */
+size_t console_read_line(char *buf, size_t cap, unsigned first_ms,
+                         unsigned char_ms)
+{
+    size_t n = 0;
+
+    for (;;) {
+        /* getchar_timeout_us takes microseconds; the limits are milliseconds. */
+        int c = getchar_timeout_us(n == 0 ? first_ms * 1000u
+                                          : char_ms * 1000u);
+
+        if (c == PICO_ERROR_TIMEOUT || c == PICO_ERROR_NO_DATA) {
+            buf[0] = 0;
+            return 0;
+        }
+        if (c == '\r' || c == '\n') { /* the host sends CR, some send LF */
+            putchar('\n');           /* the host does not echo, so this end does */
+            buf[n] = 0;
+            return n;
+        }
+        if (c == 3) { /* ^C: give up, take the default */
+            buf[0] = 0;
+            return 0;
+        }
+        if (c == 0x7f || c == '\b') {
+            if (n > 0) {
+                n--;
+                printf("\b \b");
+            }
+            continue;
+        }
+        if (c >= ' ' && c < 127 && n + 1 < cap) {
+            putchar(c);
+            buf[n++] = (char)c;
+        }
+    }
 }
 
 /*
