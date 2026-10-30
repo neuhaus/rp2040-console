@@ -70,6 +70,14 @@ if(ROGUE_SOFT_REBOOT)
     set(_soft_reboot SOFT_REBOOT)
 endif()
 
+# More ROGUEOPTS entries, comma-separated (e.g. "name=Sven,nojump"); they
+# follow file=rogue.save, which restoring depends on.
+set(ROGUE_EXTRA_OPTIONS "" CACHE STRING "Additional ROGUEOPTS entries")
+set(_rogueopts "file=rogue.save")
+if(ROGUE_EXTRA_OPTIONS)
+    string(APPEND _rogueopts ",${ROGUE_EXTRA_OPTIONS}")
+endif()
+
 rp2040_console_game(
     NAME         rogue
     ROOT         ${ROGUE_STAGE}
@@ -86,7 +94,7 @@ rp2040_console_game(
     # hands that file to Rogue as argv[1] - its only way of restoring - when
     # it exists at boot.
     ENV          TERM=xterm TERMCAP=/rogue.termcap LOGNAME=rogue HOME=/
-                 ROGUEOPTS=file=rogue.save
+                 ROGUEOPTS=${_rogueopts}
     RESTORE_ARG  rogue.save
     DATA_FILES   rogue.instr rogue.termcap
     EMPTY_FILES  rogue.scores

@@ -36,7 +36,9 @@ The environment sets:
   checking for NULL. Every score is recorded under `rogue`, the name a Unix
   login would have supplied; `ROGUEOPTS=name=...` sets another display name.
 - `ROGUEOPTS=file=rogue.save`, which makes `rogue.save` the save prompt's
-  default.
+  default. The `ROGUE_EXTRA_OPTIONS` cache variable (empty by default) adds
+  more comma-separated entries after it, e.g.
+  `-DROGUE_EXTRA_OPTIONS=name=Sven,nojump`.
 
 `RESTORE_ARG rogue.save` passes the save to Rogue as `argv[1]` whenever the
 file exists at boot. That is Rogue's only way to restore. Rogue deletes the
