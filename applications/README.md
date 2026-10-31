@@ -8,10 +8,10 @@ directory. These scripts build images; they do not flash a device.
 | Application | Entry point | Source |
 | --- | --- | --- |
 | [Hello](hello/README.md) | `sh applications/hello/build.sh` | Included minimal terminal example |
-| [restoHack](restohack/README.md) | Manual CMake manifest; existing reference instructions | Hack 1.0.3 restoration |
 | [NetHack 3.1.3](nethack-3.1.3/README.md) | `python3 applications/nethack-3.1.3/build.py` | Pinned official historical commit |
-| [Rogue 9.8.6](rogue/README.md) | `sh applications/rogue/build.sh` | Pinned upstream commit, cloned at configure |
 | [NetHack 3.6.7](nethack-3.6.7/README.md) | `applications/nethack-3.6.7/build.sh` | Pinned official release; compressed levels and single checkpoint |
+| [restoHack](restohack/README.md) | Manual CMake manifest; existing reference instructions | Hack 1.0.3 restoration |
+| [Rogue 9.8.6](rogue/README.md) | `sh applications/rogue/build.sh` | Pinned upstream commit, cloned at configure |
 
 ## Common prerequisites
 

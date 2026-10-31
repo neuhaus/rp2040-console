@@ -1,23 +1,41 @@
-# Score-log cleanup — 31 October 2026 (hardware run incomplete)
+# Score-log cleanup — 31 October 2026
 
-Bones files are now deleted level by level, and when that is not enough
-`xlogfile` and then `logfile` are emptied (see INTERNALS.md). Release firmware
-1,546,636 B, diagnostic firmware 1,548,268 B (20 B below the volume).
+**With the score logs added to the cleanup, the full run passed again: all 90
+checks of `tests/ascension.py`, every FAT image clean under `fsck.fat -n`, and
+the ordinary release firmware ascended.** Bones files are deleted level by
+level, and when that is not enough `xlogfile` and then `logfile` are emptied
+(see INTERNALS.md). Release firmware 1,546,636 B, diagnostic firmware
+1,548,268 B (20 B below the volume).
 
-- A first run with the logs **deleted** passed the bones, world, deep, restore,
-  ordinary and endgame stages: all seven bones files, then `xlogfile` (3,584 B)
-  and `logfile` (1,024 B), went only below 48 KiB free, and the full-dungeon
-  checkpoint had 11,776 B free. Resumed from the endgame stage, the ordinary
-  firmware climbed into the Planes and **ascended**. The score check then found
-  that a deleted log is never recreated: with `fcntl` locking, `lock_file()`
-  opens the log first and gives up ("Cannot open file logfile"). The logs are
-  now emptied instead of deleted.
-- The first run of that fix stopped in the world stage at Gnomish Mines level 8
-  because the host computer went to sleep and dropped the USB connection (not
-  a board fault: heap and stack were normal and no panic was printed). It is
-  being rerun with the host kept awake.
-- The harness now answers the wizard-mode "Die?" with `n` except while it plants
-  bones; a level-1 hero died on arrival on the Plane of Air otherwise.
+| Measure | Result |
+|---|---:|
+| planted before the world stage | 7 bones files (12,085 B), `logfile` 966 B, `xlogfile` 3,296 B |
+| reclaimed, in order | 7 bones files, then `xlogfile`, then `logfile` |
+| free space at each reclaim | 41,472–48,640 B, always below the 48 KiB reserve |
+| space freed | 18,944 B (14,336 B bones, 3,584 B `xlogfile`, 1,024 B `logfile`) |
+| free after the deep checkpoint | **11,264 B** |
+| free without the cleanup | about −7.5 KB: the dungeon would not fit |
+| restore (#stats) | 200 objects, 3 monsters, 76 overviews, 153 contained: identical |
+| Astral checkpoint | 526 objects, 83 monsters, 81 overviews, 153 contained: identical |
+| logged after emptying | ascension: `logfile` 80 B, `xlogfile` 320 B; quit game +70 / +303 B |
+| peak heap / stack | 104,440 B / 16,132 of 20,480 B; 0 failed allocations, guard intact |
+
+The emptied logs stay on the volume with size 0, and the next finished games
+were logged normally. `record` stayed empty: every game in the run was played
+in wizard or explore mode, or quit without points.
+
+Faults found on the way:
+
+- A first version **deleted** the logs. That run reached the ascension, but the
+  score check then found that a deleted log is never recreated: with `fcntl`
+  locking, `lock_file()` opens the log first and gives up ("Cannot open file
+  logfile"). The logs are now emptied instead.
+- The harness answered the wizard-mode "Die?" with `y` after the bones stage,
+  and a level-1 hero died on arrival on the Plane of Air. It now answers `n`
+  except while planting bones.
+- One rerun stopped in the Gnomish Mines because the host computer went to sleep
+  and dropped the USB connection. The final run kept the host awake
+  (`caffeinate`).
 
 # Hardware validation — 30 October 2026
 
