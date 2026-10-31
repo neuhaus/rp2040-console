@@ -7,6 +7,7 @@ directory. These scripts build images; they do not flash a device.
 
 | Application | Entry point | Source |
 | --- | --- | --- |
+| [Frotz](frotz/README.md) | `applications/frotz/build.py` | Frotz dumb interface, cloned from the sn_/frotz fork; story file supplied by the user |
 | [Hello](hello/README.md) | `sh applications/hello/build.sh` | Included minimal terminal example |
 | [NetHack 3.1.3](nethack-3.1.3/README.md) | `python3 applications/nethack-3.1.3/build.py` | Pinned official historical commit |
 | [NetHack 3.6.7](nethack-3.6.7/README.md) | `applications/nethack-3.6.7/build.sh` | Pinned official release; compressed levels and single checkpoint |
