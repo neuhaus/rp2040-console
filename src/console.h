@@ -12,7 +12,8 @@
 
 /*
  * Input with the tty's input processing applied - what getchar() reaches
- * through the prefix header. Blocks until a character arrives.
+ * through the prefix header. Blocks until a character arrives in raw mode,
+ * and until a line does in canonical mode.
  */
 int console_getchar(void);
 
@@ -23,8 +24,9 @@ void console_rawout(const char *s);
 void console_write(const void *buf, size_t count);
 
 /*
- * Read from the console as a terminal does: blocks for the first byte, then
- * returns what is waiting, at most a line. What read() does for fd 0.
+ * Read from the console as a terminal does: blocks until a character (raw
+ * mode) or a line (canonical mode) is ready, then returns what is waiting, at
+ * most a line. What read() does for fd 0.
  */
 int console_read(void *buf, size_t count);
 

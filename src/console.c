@@ -6,9 +6,11 @@
  * tty used to do has to be done by somebody.
  *
  *   Input:  a program expects the line discipline to have turned Enter into a
- *           newline and to have echoed what it typed. Nothing has done that
- *           here, and the SDK's own input wrapper does not either - it hands
- *           over whatever the USB driver received.
+ *           newline, echoed what it typed, and held a line back until Enter
+ *           arrived - applying Backspace to what it held rather than passing
+ *           it on. Nothing has done any of that here, and the SDK's own input
+ *           wrapper does not either: it hands over whatever the USB driver
+ *           received.
  *
  *   Output: the SDK makes libc's stdio work by --wrapping putchar(), puts(),
  *           printf() and vprintf() onto its stdio drivers. That covers most
@@ -19,6 +21,7 @@
  *           fileio.c routes those two descriptors here instead.
  */
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <termios.h>
@@ -53,22 +56,51 @@ static int raw_getchar_timeout_us(uint32_t us)
     return stdio_getchar_timeout_us(us);
 }
 
+/*
+ * The canonical input buffer.
+ *
+ * In canonical mode a terminal hands the program a finished line, not the
+ * characters as they are typed: it holds them, applies erase and kill to what
+ * it holds, and only passes the line on when Enter arrives. With no device to
+ * do that, the holding has to happen here, or Backspace reaches the program as
+ * a literal character and the erased text stays in the line it reads.
+ *
+ * While a line is being collected line_ready is false and line_len grows.
+ * When a character ends the line, line_ready is set and line_buf[line_pos,
+ * line_len) is handed back one character at a time.
+ */
+#define CONSOLE_LINE_MAX 256
+
+static char line_buf[CONSOLE_LINE_MAX];
+static size_t line_len;
+static size_t line_pos;
+static bool line_ready;
+
+/* Forget whatever line was collected or being collected. */
+static void line_reset(void)
+{
+    line_len = 0;
+    line_pos = 0;
+    line_ready = false;
+}
+
 void console_discard_input(void)
 {
     pending_input = -1;
+    line_reset();
+
     /* Drain existing input, bounded even if a noisy UART keeps transmitting. */
     for (unsigned i = 0; i < 1024; ++i)
         if (raw_getchar_timeout_us(0) < 0) break;
 }
 
 /*
- * The input processing a line discipline used to do, in one place.
- *
- * Returns the character the caller should see, or sets *keep to 0 for a
- * character that is not deliverable (IGNCR discarding a carriage return) and
- * which the caller should go back to the device for another.
+ * The translations a line discipline performs before anything sees the
+ * character. Returns the character to use, or clears *keep for one that is
+ * discarded (IGNCR ignoring a carriage return) and which the caller should
+ * go back to the device for another.
  */
-static int process_input(int c, int *keep)
+static int translate_input(int c, int *keep)
 {
     struct termios *t = console_termios();
 
@@ -87,13 +119,6 @@ static int process_input(int c, int *keep)
     if (c == 0x7f)
         c = '\b';
 
-    if (c == '\b') {
-        if ((t->c_lflag & (ECHO | ECHOE)) == (ECHO | ECHOE))
-            console_rawout("\b \b");
-
-        return c;
-    }
-
     if (c == '\r') {
         if (t->c_iflag & IGNCR) {
             *keep = 0;
@@ -106,29 +131,85 @@ static int process_input(int c, int *keep)
         c = '\r';
     }
 
-    /*
-     * Echo what the program has not asked us to stop echoing.
-     *
-     * This is the whole reason the engine keeps a termios state at all. A
-     * program that reads a line - the "Who are you?" prompt, say - has never
-     * echoed: the terminal did it, and the program is correct that it is not
-     * its business. A program reading single keys turns ECHO off first and
-     * expects silence. Honouring the flag serves both; doing neither, or always
-     * echoing, serves neither.
-     *
-     * Control characters other than tab and newline are not echoed: ECHOCTL's
-     * "^C" rendering is a nicety, and a program that receives a control
-     * character is handling it as a command, not displaying it.
-     */
-    if (t->c_lflag & ECHO) {
-        if (c == '\n' || c == '\t' || (c >= ' ' && c < 0x7f)) {
-            char as_string[2] = { (char)c, '\0' };
+    return c;
+}
 
-            console_rawout(as_string);
+/*
+ * Echo one character, if the program has not asked us to stop echoing.
+ *
+ * This is the whole reason the engine keeps a termios state at all. A program
+ * that reads a line - the "Who are you?" prompt, say - has never echoed: the
+ * terminal did it, and the program is correct that it is not its business. A
+ * program reading single keys turns ECHO off first and expects silence.
+ * Honouring the flag serves both; doing neither, or always echoing, serves
+ * neither.
+ *
+ * Control characters other than tab and newline are not echoed: ECHOCTL's
+ * "^C" rendering is a nicety, and a program that receives a control character
+ * is handling it as a command, not displaying it.
+ */
+static void echo_char(int c)
+{
+    struct termios *t = console_termios();
+
+    if (!(t->c_lflag & ECHO))
+        return;
+
+    if (c == '\n' || c == '\t' || (c >= ' ' && c < 0x7f)) {
+        char as_string[2] = { (char)c, '\0' };
+
+        console_rawout(as_string);
+    }
+}
+
+/* Rub out the last echoed character, the way ECHOE asks. */
+static void echo_erase(void)
+{
+    struct termios *t = console_termios();
+
+    if ((t->c_lflag & (ECHO | ECHOE)) == (ECHO | ECHOE))
+        console_rawout("\b \b");
+}
+
+/*
+ * Add one already-translated character to the line being collected, applying
+ * erase and kill to what is held. Returns true when the character ended the
+ * line.
+ *
+ * A line longer than the buffer keeps the first CONSOLE_LINE_MAX characters
+ * and drops the rest; the program still receives a complete, newline-ended
+ * line, which is what a terminal guarantees and more than one that discards
+ * the line would.
+ */
+static bool canonical_feed(int c)
+{
+    struct termios *t = console_termios();
+    const cc_t *cc = t->c_cc;
+
+    if (c == '\b' || (cc[VERASE] != 0 && c == cc[VERASE])) {
+        if (line_len > 0) {
+            line_len--;
+            echo_erase();
         }
+
+        return false;
     }
 
-    return c;
+    if (cc[VKILL] != 0 && c == cc[VKILL]) {
+        while (line_len > 0) {
+            line_len--;
+            echo_erase();
+        }
+
+        return false;
+    }
+
+    if (line_len < sizeof line_buf) {
+        line_buf[line_len++] = (char)c;
+        echo_char(c);
+    }
+
+    return c == '\n';
 }
 
 /*
@@ -142,16 +223,47 @@ static int process_input(int c, int *keep)
 int console_getchar(void)
 {
     for (;;) {
+        /* Hand back a line that has already been completed. */
+        if (line_ready) {
+            if (line_pos < line_len)
+                return (unsigned char)line_buf[line_pos++];
+
+            line_reset();
+        }
+
         int c = pending_input >= 0 ? raw_getchar_timeout_us(0) : stdio_getchar();
 
         if (c < 0)
             return c;           /* PICO_ERROR_TIMEOUT or PICO_ERROR_NO_DATA */
 
         int keep = 1;
-        c = process_input(c, &keep);
+        c = translate_input(c, &keep);
 
-        if (keep)
+        if (!keep)
+            continue;
+
+        if (!(console_termios()->c_lflag & ICANON)) {
+            /*
+             * Raw: the program asked for characters as they are typed, so it
+             * gets them as they arrive. A partial line held from a previous
+             * canonical read is not part of what it just asked for.
+             */
+            if (line_len > 0)
+                line_reset();
+
+            if (c == '\b')
+                echo_erase();
+            else
+                echo_char(c);
+
             return c;
+        }
+
+        if (canonical_feed(c)) {
+            line_ready = true;
+            line_pos = 0;
+            return (unsigned char)line_buf[line_pos++];
+        }
     }
 }
 
@@ -161,6 +273,26 @@ int console_getchar(void)
  */
 static int console_getchar_nowait(void)
 {
+    if (line_ready) {
+        if (line_pos < line_len)
+            return (unsigned char)line_buf[line_pos++];
+
+        line_reset();
+        return -1;
+    }
+
+    if (console_termios()->c_lflag & ICANON) {
+        /*
+         * Canonical mode has nothing to give until Enter completes a line,
+         * and waiting for that is what the first byte of the read is for.
+         */
+        return -1;
+    }
+
+    /* As above: a partial canonical line is not what raw mode is reading. */
+    if (line_len > 0)
+        line_reset();
+
     for (;;) {
         int c = raw_getchar_timeout_us(0);
 
@@ -168,10 +300,17 @@ static int console_getchar_nowait(void)
             return -1;
 
         int keep = 1;
-        c = process_input(c, &keep);
+        c = translate_input(c, &keep);
 
-        if (keep)
-            return c;
+        if (!keep)
+            continue;
+
+        if (c == '\b')
+            echo_erase();
+        else
+            echo_char(c);
+
+        return c;
     }
 }
 

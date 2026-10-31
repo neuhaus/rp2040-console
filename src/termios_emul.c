@@ -10,10 +10,11 @@
  * goes on being echoed.
  *
  * So the modes are kept, and the console input path consults them. That makes
- * the small set this console can honour - ECHO, ECHOE, ICRNL, IGNCR, INLCR,
- * ISTRIP - actually take effect, and everything else is remembered and has no
- * consequence, which is an honest description of "no line discipline" rather
- * than a claim that setting a mode did something.
+ * the small set this console can honour - ICANON, ECHO, ECHOE, ICRNL, IGNCR,
+ * INLCR, ISTRIP, and VERASE and VKILL from c_cc - actually take effect, and
+ * everything else is remembered and has no consequence, which is an honest
+ * description of "no line discipline" rather than a claim that setting a mode
+ * did something.
  */
 
 #include <errno.h>

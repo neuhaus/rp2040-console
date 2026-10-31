@@ -20,15 +20,15 @@
  *     tcgetattr() has to report something coherent and stable;
  *   - it turns echo and canonical mode off before reading single keys, and
  *     the engine needs to know that it did - see console_getchar(), which
- *     echoes only while ECHO is set;
+ *     collects a line while ICANON is set and echoes only while ECHO is;
  *   - it asks what the screen size is, or what the erase key is, and those
  *     have real answers here.
  *
  * So tcsetattr() records what it is told rather than discarding it, and the
- * subset of the settings that this console can honour - ECHO, ECHOE, ICRNL,
- * ISTRIP - is applied by the console input path itself. Everything else is
- * remembered and has no effect, which is what "no line discipline" means
- * rather than "tcsetattr() lies about succeeding".
+ * subset of the settings that this console can honour - ICANON, ECHO, ECHOE,
+ * ICRNL, ISTRIP, VERASE and VKILL - is applied by the console input
+ * path itself. Everything else is remembered and has no effect, which is what
+ * "no line discipline" means rather than "tcsetattr() lies about succeeding".
  *
  * The struct carries c_ispeed and c_ospeed, which System V / BSD termios has
  * and POSIX's does not. They are here because programs written against BSD
