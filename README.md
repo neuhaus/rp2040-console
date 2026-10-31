@@ -3,15 +3,16 @@
 A bare-metal platform layer for terminal programs on the Raspberry Pi Pico
 (RP2040). It provides USB console I/O, termcap/termios compatibility, files,
 environment variables and a clock. Application code and read-only tables execute
-from flash using XIP, leaving SRAM for mutable data, heap and stack.
+from flash using Execution-in-place (XIP), leaving SRAM for mutable data, heap 
+and stack.
 
-The platform was developed against Hack 1.0.3 (restoHack). Application-specific
+This layer was developed against Hack 1.0.3, rogue and nethack. The application-specific
 configuration lives in a CMake manifest and separate port files, so compatible
 programs can retain their original C sources.
 
 ## Build an application
 
-You can find some examples in the `applications` subdirectory.
+You can find some working examples in the `applications` subdirectory.
 
 On Debian, install the ARM compiler, newlib, native build tools and FAT utilities:
 
