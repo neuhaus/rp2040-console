@@ -138,7 +138,7 @@ the same description), `#sramportal` (step onto this level's magic portal and
 let the ordinary trap code take it), `#sramaltar` (move to the co-aligned Astral
 altar) and `#stats`. Add `--sram-max-dungeon` to choose the maximum valid length
 for each randomly sized branch. This option changes gameplay setup and is
-intended for testing only. The diagnostic image ends 172 bytes below the data
+intended for testing only. The diagnostic image ends 20 bytes below the data
 volume; diagnostics that grow it must free space elsewhere.
 
 ## Ascension validation script
