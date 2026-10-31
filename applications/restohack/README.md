@@ -1,6 +1,6 @@
 # hack 1.0.3 (via restoHack)
 
-restoHack is a version of hack 1.0.3 adapted for modern C compilers. 
+[restoHack](https://github.com/Critlist/restoHack) is a version of [hack 1.0.3](https://nethackwiki.com/wiki/Hack_1.0.3) adapted for modern C compilers. 
 It can run on your Pi Pico (rp2040) with 2MB flash.
 It seeds its mazes using the hardware entropy generator, saves the games in flash
 and drives the screen through termcap.
