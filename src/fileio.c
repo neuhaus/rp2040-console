@@ -703,8 +703,8 @@ int stat(const char *path, struct stat *st)
         if (found)
             st->st_mtime = remembered;
     }
-    TRACE("fileio: stat(\"%s\") -> mtime %lld\n", path,
-          (long long)st->st_mtime);
+    TRACE("fileio: stat(\"%s\") -> mtime %ld\n", path,
+          (long)st->st_mtime);
     return 0;
 }
 
@@ -737,8 +737,8 @@ int fstat(int fd, struct stat *st)
     st->st_blksize = 512;
     st->st_blocks  = (st->st_size + 511) / 512;
     st->st_mtime   = open_files[fd].mtime;
-    TRACE("fileio: fstat(%d) -> size %lu mtime %lld\n",
-          fd, (unsigned long)st->st_size, (long long)st->st_mtime);
+    TRACE("fileio: fstat(%d) -> size %lu mtime %ld\n",
+          fd, (unsigned long)st->st_size, (long)st->st_mtime);
     return 0;
 }
 

@@ -91,14 +91,16 @@ static void wait_for_restart(int status, int soft)
      * is the reason to look, and this is the last point at which the answer
      * can include everything the game just wrote. Printed only when there is
      * a mounted volume to ask.
+     *
+     * In KB, not bytes: the SDK's compact printf does not handle 64-bit
+     * conversions, and 32-bit KB covers any volume this can mount.
      */
     {
         uint64_t free_bytes;
 
         if (storage_free_bytes(&free_bytes))
-            printf("\n%llu bytes free on the volume (%llu KB).\n",
-                   (unsigned long long) free_bytes,
-                   (unsigned long long) (free_bytes / 1024));
+            printf("\n%lu KB free on the volume.\n",
+                   (unsigned long) (free_bytes / 1024));
     }
 
     /*

@@ -80,8 +80,8 @@ static void load(void)
             v |= (uint64_t)raw[mtime_path + 8 + k] << (8 * k);
         db.rec[db.count].epoch = (int64_t)v;
         db.count++;
-        TRACE("mtime: file has \"%s\" as %lld\n", db.rec[db.count - 1].path,
-              (long long)db.rec[db.count - 1].mtime);
+        TRACE("mtime: file has \"%s\" as %ld\n", db.rec[db.count - 1].path,
+              (long)db.rec[db.count - 1].mtime);
     }
     f_close(&f);
     TRACE("mtime: loaded %u remembered dates\n", (unsigned)db.count);
@@ -154,7 +154,7 @@ time_t mtime_lookup(const char *path, int *found)
     if (found != NULL)
         *found = (i >= 0);
     if (i >= 0)
-        TRACE("mtime: \"%s\" remembered as %lld\n", path, (long long)db.rec[i].mtime);
+        TRACE("mtime: \"%s\" remembered as %ld\n", path, (long)db.rec[i].mtime);
     return (i >= 0) ? (time_t)db.rec[i].mtime : (time_t)0;
 }
 
@@ -192,8 +192,8 @@ void mtime_store(const char *path, time_t mtime, time_t epoch)
     }
     db.rec[i].mtime = (int64_t)mtime;
     db.rec[i].epoch = (int64_t)epoch;
-    TRACE("mtime: remember \"%s\" as %lld (epoch %lld)\n", path,
-          (long long)mtime, (long long)epoch);
+    TRACE("mtime: remember \"%s\" as %ld (epoch %ld)\n", path,
+          (long)mtime, (long)epoch);
     persist();
 }
 
