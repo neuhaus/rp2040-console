@@ -39,6 +39,7 @@ produces the data volume, and both are flashed in either order. The arguments:
 | `DATA_DIRS` | directories to create on the volume |
 | `LISTDIR` | volume directory listed at startup with size and remembered date (default: none) |
 | `ARGV0` | what `argv[0]` holds (default: `NAME`) |
+| `ARGS` | extra `argv` entries after `argv[0]`, for a program that needs a file name or switch rather than a command line |
 | `ASK_ENV` | environment variable asked for on the console before each run (boot, and each soft-reboot session); the default is the last answer, remembered in `/.askenv`, else the `ENV` value |
 | `ASK_PROMPT` | the question `ASK_ENV` asks (default `Who are you?`) |
 | `RESTORE_ARG` | volume file passed as `argv[1]` only when it exists at startup, for programs that resume a save given on the command line |
@@ -334,8 +335,10 @@ bugs stop being about the port and start being about which of two headers won.
 
 **The libc calls that are missing, defined rather than stubbed.** `flock()` and
 `fcntl()` that always grant, because there is one program and it is not a lie;
-`ioctl()` that answers the one request with a true answer; and the process
-surface left absent on purpose - newlib declares `fork()` but it resolves
+`ioctl()` that answers the one request with a true answer; `basename()`, which
+newlib declares in `<libgen.h>` but only ships the GNU variant of, defined to
+the POSIX behaviour; and the process surface left absent on purpose - newlib
+declares `fork()` but it resolves
 through to `_fork_r`, which nothing in this toolchain defines, so a program
 that reaches for a subprocess stops at link time where somebody will notice
 rather than running at runtime with a
@@ -372,7 +375,10 @@ There is no command line on this device, and the C runtime leaves whatever
 initialisation put in r0 and r1 in place of argc and argv - so a program that
 reads `argv[0]` is following a wild pointer. The engine passes one argument, the
 program's own name, which is all a program can sensibly want, and which several
-of them need to date their own save files.
+of them need to date their own save files. A program that needs more than its
+name - an interpreter that is handed a story file, for example - declares the
+extra arguments with the manifest's `ARGS`, which are compiled in and spliced
+into `argv` after `argv[0]`.
 
 Constructors are not used either, and could not be: this SDK's startup calls
 `runtime_init`, `main` and `exit`, and never walks `.init_array` -
@@ -395,11 +401,11 @@ Does not fit:
   provided as a "no" that programs handle correctly - `fork()` is absent so the
   caller learns at link time - and some of it cannot be.
 - **Programs that need more than the heap.** See the memory map.
-- **Anything expecting a real line discipline.** The console echoes and translates
-  what the program's termios settings say it should, which is enough for a program
-  that reads a line and then turns echo off to read keys. It is not a terminal
-  emulator's worth of behaviour: no job control, no flow control, no signals from
-  the break key.
+- **Anything expecting a real line discipline.** The console echoes, translates
+  and, while `ICANON` is set, collects a line - enough for a program that reads
+  a line and then turns canonical mode and echo off to read keys. It is not a
+  terminal emulator's worth of behaviour: no job control, no flow control, no
+  signals from the break key.
 
 ## Filesystem
 
@@ -491,7 +497,9 @@ These are the ones that cost time to find, in rough order of how much they cost.
   the first byte and then returns what is waiting, at most a line.
 - **Backspace is normalised to BS (0x08)** and `VERASE` is reported as BS, because
   hosts send DEL and programs hard-code BS and `VERASE` in different places; both
-  have to agree or erase works in one prompt and not the next.
+  have to agree or erase works in one prompt and not the next. The console holds
+  the line itself while `ICANON` is set, so erase edits what the program receives
+  instead of arriving as a character in front of it.
 - **`termcap`'s `ospeed` is a padding index, not a baud rate.** It is reported as
   `B9600`'s BSD code. A program that indexes a table by it will read out of bounds
   if given a number like 115200.
@@ -500,6 +508,14 @@ These are the ones that cost time to find, in rough order of how much they cost.
   on that for animation delays: `tty_delay_output()` calls `tputs("50")`. A
   `tputs()` that copies its argument verbatim paints a literal `50` on the
   screen, so the shim strips the specification and emits only the rest.
+- **`printf` is the SDK's compact implementation, not newlib's.** Output goes
+  through `vfctprintf` (pico_printf). Its 64-bit conversions are compiled in only
+  when `PICO_PRINTF_SUPPORT_LONG_LONG` is enabled - the default, but the SDK
+  turns it off for minimal-printf builds. With it off, `%llu`/`%lld` print
+  nothing and consume no argument, silently shifting every conversion after
+  them; there is no diagnostic. The platform keeps its own output off that
+  setting: it prints volume space in KB and casts the debug traces to 32-bit.
+  `%d`, `%u`, `%x`, `%s`, `%c` and their `l` forms are unaffected.
 - **`ffconf.h` uses unconditional `#define`s**, so `-D` overrides of FatFs options
   are silently no-ops. Change the header or provide your own on the include path.
 - **The program is not allowed to buffer the console.** `setbuf()` and
