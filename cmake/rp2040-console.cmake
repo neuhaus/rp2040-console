@@ -158,6 +158,7 @@ set(RP2040_CONSOLE_ROWS "24" CACHE STRING
 #
 #   NAME          target and output name
 #   ARGV0         what argv[0] holds (default: NAME)
+#   ARGS          extra arguments after argv[0] (e.g. a story file to load)
 #   RESTORE_ARG   volume file passed as argv[1] when it exists at startup
 #   ASK_ENV       environment variable asked for on the console before each
 #                 run, e.g. LOGNAME for a program with no name prompt
@@ -211,6 +212,7 @@ function(rp2040_console_game)
             INCLUDE_DIRS
             DEFINES
             ENV
+            ARGS
             RENAMES
             SYSTEM_HEADERS
             DATA_FILES
@@ -289,6 +291,28 @@ function(rp2040_console_game)
     file(WRITE "${_config_dir}/rp2040_console_env.inc"
             "/* Generated from the game's manifest. Do not edit. */\n"
             "${_env_table}")
+
+    # --- extra argv entries --------------------------------------------
+    #
+    # Written as C statements that append to argv, included by the engine's
+    # console_args() after argv[0]. Generated rather than passed as a -D because
+    # an argument is itself a quoted string, and a value with a comma in it would
+    # otherwise have to survive two layers of quoting. The count is emitted too,
+    # so the caller can size its argv array.
+    #
+    set(_args_table "")
+    set(_args_count 0)
+    foreach(entry IN LISTS CG_ARGS)
+        string(REPLACE "\\" "\\\\" entry "${entry}")
+        string(REPLACE "\"" "\\\"" entry "${entry}")
+        string(APPEND _args_table "        argv[argc++] = \"${entry}\";\n")
+        math(EXPR _args_count "${_args_count} + 1")
+    endforeach()
+
+    file(WRITE "${_config_dir}/rp2040_console_args.inc"
+            "/* Generated from the game's manifest. Do not edit. */\n"
+            "#define RP2040_CONSOLE_ARGS_COUNT ${_args_count}\n"
+            "${_args_table}")
 
     # --- names that clash ---------------------------------------------
     #

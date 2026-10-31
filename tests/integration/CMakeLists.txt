@@ -11,6 +11,7 @@ rp2040_console_game(NAME generated_app SOURCES helper.c probe.c GENERATED "${CMA
     INCLUDE_DIRS app LEGACY_TIME32 RENAMES panic=game_panic SYSTEM_HEADERS hardware/watchdog.h
     ENV TERM=xterm EMPTY_FILES scores)
 rp2040_console_game(NAME native_app SOURCES native.c probe.c ENV TERM=xterm)
+rp2040_console_game(NAME args_app SOURCES args.c ARGS -x story.z3 ENV TERM=xterm)
 rp2040_console_game(NAME soft_app SOURCES soft.c SOFT_REBOOT ENV TERM=xterm
     EMPTY_FILES session.txt HEAP_END 0x2003c000 STACK_RESERVE 24576)
 # Regression: warning suppression must not be needed by the platform fixture.

@@ -10,10 +10,17 @@
  * Owning the entry point also settles the arguments, which is not a detail. The
  * SDK's C runtime branches to main without setting up r0 and r1, so argc and
  * argv as a program receives them are whatever initialisation left behind. The
- * engine replaces that with one argument, the program's own name, because a
+ * engine replaces that with the program's own name as argv[0], because a
  * program legitimately wants argv[0] - to name itself in messages, or to stat
  * itself to find out when it was built - and there is no command line here to
  * give it anything else.
+ *
+ * A program that must be handed more than its name - an interpreter that wants
+ * a story file, say - declares the extra arguments in its manifest. They are
+ * written into rp2040_console_args.inc as C statements that append to argv, and
+ * spliced in after the program's name. On this device those arguments are build
+ * data rather than something a player types, which is why they live in the
+ * manifest next to the data files and the environment.
  */
 
 #include <stdio.h>
@@ -180,6 +187,15 @@ static int console_args(char **argv, char *name)
     int argc = 0;
 
     argv[argc++] = name;
+
+    /*
+     * Manifest ARGS, generated as string literals: build data spliced in after
+     * the program's name, before anything the platform adds at run time. The
+     * include also defines RP2040_CONSOLE_ARGS_COUNT, which main() uses to size
+     * the array it passes in.
+     */
+#include "rp2040_console_args.inc"
+
 #ifdef RP2040_CONSOLE_RESTORE_ARG
     {
         static char restore[] = RP2040_CONSOLE_RESTORE_ARG;
@@ -205,7 +221,7 @@ int main(int argc, char **argv)
 {
 #ifndef RP2040_CONSOLE_SOFT_REBOOT
     static char console_name[] = RP2040_CONSOLE_ARGV0;
-    static char *console_argv[3];
+    static char *console_argv[RP2040_CONSOLE_ARGS_COUNT + 3];
 #endif
 
     (void)argc;
@@ -217,7 +233,7 @@ int main(int argc, char **argv)
     for (;;) {
         /* New stack frames and argv each time; USB/clock/storage init run once. */
         char name[] = RP2040_CONSOLE_ARGV0;
-        char *argv[3];
+        char *argv[RP2040_CONSOLE_ARGS_COUNT + 3];
         int args = console_args(argv, name);
         restart_note_boot();
         pid_init();
