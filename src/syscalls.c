@@ -206,3 +206,37 @@ int kill(pid_t pid, int sig)
 }
 
 int _kill(pid_t pid, int sig) { return kill(pid, sig); }
+
+/* --- paths ----------------------------------------------------------- */
+
+/*
+ * newlib declares basename() in <libgen.h> - and maps the name to
+ * __xpg_basename() - but only ships the GNU variant, so a program that
+ * includes <libgen.h> and calls basename() links against nothing. The POSIX
+ * behaviour is supplied here rather than forcing the program to notice the
+ * toolchain's gap.
+ *
+ * POSIX basename() is allowed to modify its argument, and does: trailing
+ * slashes are removed in place. An empty string answers "."; a path of nothing
+ * but slashes answers "/", which is what the XPG specification asks for and
+ * what callers such as frotz rely on.
+ */
+char *basename(char *path)
+{
+    char *slash;
+
+    if (path == NULL || *path == '\0')
+        return (char *) ".";
+
+    slash = path + strlen(path) - 1;
+    while (slash > path && *slash == '/')
+        *slash-- = '\0';
+
+    slash = strrchr(path, '/');
+    if (slash == NULL)
+        return path;
+    if (slash[1] != '\0')
+        return slash + 1;
+
+    return (char *) "/";
+}
