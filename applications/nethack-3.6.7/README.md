@@ -63,7 +63,10 @@ the Pico reboots.
 
 ## Saved games
 
-Only one saved game is supported.
+Only one saved game is supported. When the volume runs short of space, bones
+files left by earlier characters are deleted, and after them the score logs
+`xlogfile` and `logfile` are emptied, so the current game can always save and
+change levels. The high-score list (`record`) is kept.
 
 See [INTERNALS.md](INTERNALS.md) for source customization, regression tests and
 implementation details, and [RESULTS.md](RESULTS.md) for measurements.

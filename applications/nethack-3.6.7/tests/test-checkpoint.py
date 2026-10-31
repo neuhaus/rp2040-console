@@ -22,6 +22,7 @@ typedef void *genericptr_t;
 #define LFILE_EXISTS 1
 #define LEVELPREFIX 0
 #define SAVEPREFIX 1
+#define BONESPREFIX 2
 #define FCMASK 0600
 #define TRUE 1
 static struct {unsigned flags;} level_info[66];
@@ -88,7 +89,7 @@ int main(void){
  armed=1;if(!setjmp(failure)){level_owner_checks(0,0,2,0,1,0);assert(!"invalid owner accepted");}assert(strstr(reason,"invalid checkpoint owner"));armed=0;
  fd=open("0game.1",O_RDONLY);assert(fd>=0&&read(fd,a,sizeof a)==sizeof a);close(fd);for(unsigned i=0;i<sizeof a;i++)assert(a[i]==(unsigned char)(i*13));
  /* A completed temp is still not a checkpoint until publication succeeds. */
- unlink("save/0game");put("0game.tmp",manifest,26);getlock();assert(access("0game.tmp",F_OK)<0);assert(access("0game.1",F_OK)<0&&access("0game.3",F_OK)<0);
+ unlink("save/0game");put("0game.tmp",manifest,26);put("0game.bn",manifest,26);getlock();assert(access("0game.tmp",F_OK)<0);assert(access("0game.bn",F_OK)<0);assert(access("0game.1",F_OK)<0&&access("0game.3",F_OK)<0);
  put("0game.tmp",manifest,26);commit();assert(access("0game.tmp",F_OK)<0);fd=open("save/0game",O_RDONLY);assert(fd>=0);unsigned char got[26];assert(read(fd,got,26)==26&&!memcmp(got,manifest,26));close(fd);
  unlink("save/0game");armed=1;if(!setjmp(failure)){commit();assert(!"missing temp committed");}assert(strstr(reason,"cannot commit checkpoint"));armed=0;assert(access("save/0game",F_OK)<0);
  puts("PASS checkpoint: CRC vector, round trip, damaged/missing/truncated/duplicate levels, cache preservation, cross-process owner/ledger checks, repeated resume, interrupted-temp cleanup and completed-file publication");

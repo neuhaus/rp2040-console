@@ -45,6 +45,23 @@ summary, bounding its flash use. There is one
 saved game, shared by all character names. This implementation choice simplifies
 checkpoint ownership.
 
+## Bones files and score logs yield to the running game
+
+Bones files and the score logs are optional, so they never cost the current
+game its level files or checkpoint. Before a level file, the checkpoint
+companion or a new bones file is written, `nh_reserve_flash()`
+(`src/reserve.c`) checks the free space on the volume. Below 48 KiB
+(`NH_FLASH_RESERVE`, about twice the largest measured companion) it deletes
+bones files, level by level, until the reserve is free again. If that is not
+enough it empties `xlogfile` and then `logfile`; the game only ever appends to
+them, and each finished game adds about 370 B. They are emptied, not deleted,
+because `lock_file()` opens a log before `topten()` appends to it and gives up
+if the file is missing. `record` stays: it is capped and
+is the list the game shows. A new bones file is not written unless the reserve
+is still free afterwards, and making room for one never deletes the logs.
+Startup also removes an unfinished bones file (`0game.bn`). Above the reserve, bones
+behave as upstream: a bones level that is loaded replaces a newly generated one.
+
 Use `S` to save. A resumed checkpoint is no longer available until the next
 save; save again before disconnecting. Back up or transfer the **whole data
 volume**, not just `save/0game`. This format
@@ -110,17 +127,47 @@ the original code corrupts a worm-list pointer at startup and faults on the
 first level save or restore.
 
 For repeatable Pico measurements, build a separate image with
-`--sram-diagnostics`. It enables a fixed-seed wizard character, serial allocation
-and stack/guard readings, `#sramtrial` (Ludios), `#sramstack` (travel probes), and
-`#srampack` (150 carried test objects), `#sramtour` (depths 1–48, then Ludios),
-`#sramworld` (all actual non-endgame branch levels), `#sramrevisit`
-(revisit every non-endgame level, map terrain/traps and remember floor objects), `#sramnextplane`
-(one endgame plane), `#sramplanes` (all five), `#sramaltar` (move to the
-co-aligned Astral altar), and `#stats`. Add `--sram-max-dungeon` to choose the
-maximum valid length for each randomly sized branch. This option changes gameplay setup and is intended for testing only.
+`--sram-diagnostics`. It enables a fixed-seed wizard character and serial
+`MEASURE` lines (allocation, stack/guard readings and the volume's free bytes),
+`RECLAIM` lines for each deleted bones file or emptied score log, and these wizard commands:
+`#sramtrial` (Ludios), `#srampack` (150 carried test objects), `#sramworld`
+(all actual non-endgame branch levels), `#sramrevisit` (revisit every
+non-endgame level, map terrain/traps and remember floor objects),
+`#sramamulet` (carry the real Amulet; a wish may grant the imitation, which has
+the same description), `#sramportal` (step onto this level's magic portal and
+let the ordinary trap code take it), `#sramaltar` (move to the co-aligned Astral
+altar) and `#stats`. Add `--sram-max-dungeon` to choose the maximum valid length
+for each randomly sized branch. This option changes gameplay setup and is
+intended for testing only. The diagnostic image ends 172 bytes below the data
+volume; diagnostics that grow it must free space elsewhere.
+
+## Ascension validation script
+
+`tests/ascension.py` erases the board and drives both images over USB serial,
+on the model of the Rogue recipe's test. `tests/term.py` provides the serial
+session and a VT100 screen model for NetHack's tty output. The run plants real
+bones files, fills the volume with the maximum-branch dungeon, and plays the
+level-1 climb into the Planes and the final `#offer` on the ordinary firmware.
+Every checkpoint is imaged and checked with `fsck.fat -n`. The stages and the
+resume points are listed in the script's help.
+
+```sh
+applications/nethack-3.6.7/build.sh --qemu-generators
+applications/nethack-3.6.7/build.sh --qemu-generators \
+    --build-dir build/nethack-3.6.7-diag --sram-diagnostics --sram-max-dungeon
+python3 applications/nethack-3.6.7/tests/ascension.py \
+    --diag build/nethack-3.6.7-diag/hardware --ordinary build/nethack-3.6.7/hardware \
+    --picotool /path/to/usb-enabled/picotool --out build/nethack-ascension
+```
+
+It needs a picotool built with libusb, `fsck.fat` and mtools. No key may reach
+the board while it waits at "Press any key for a new game": that key lets
+`_exit()` rewrite `.clock`, and a forced USB reboot during that write leaves the
+second FAT copy out of date.
 
 The maximum-branch wizard workload completed all 81 playable levels, plane
-checkpoints and the normal Amulet offering. This establishes tested headroom,
+checkpoints and the normal Amulet offering; `tests/ascension.py` repeats it with
+bones files on the volume and finishes on the ordinary firmware. This establishes tested headroom,
 not safety for every possible monster population or combat path. See
 `RESULTS.md` for the build's validation and limits. NetHack and the console retain their respective
 licenses; retain NetHack's license and port patches when distributing modified code.

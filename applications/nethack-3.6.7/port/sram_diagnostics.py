@@ -31,15 +31,13 @@ def prepare(src, port, maximum=False):
             '    { \'\\0\', "sramaltar", "stand at aligned Astral altar", nh_sram_altar, WIZMODECMD | AUTOCOMPLETE },\n'
             '    { \'\\0\', "sramrevisit", "revisit every dungeon branch", nh_sram_revisit, WIZMODECMD | AUTOCOMPLETE },\n'
             '    { \'\\0\', "sramworld", "visit every dungeon branch", nh_sram_world, WIZMODECMD | AUTOCOMPLETE },\n'
-            '    { \'\\0\', "sramnextplane", "visit next endgame plane", nh_sram_nextplane, WIZMODECMD | AUTOCOMPLETE },\n'
-            '    { \'\\0\', "sramplanes", "visit all endgame planes", nh_sram_planes, WIZMODECMD | AUTOCOMPLETE },\n'
+            '    { \'\\0\', "sramportal", "take this level\'s magic portal", nh_sram_portal, WIZMODECMD | AUTOCOMPLETE },\n'
             '    { \'\\0\', "sramtrial", "fixed-seed Ludios trial", nh_sram_trial, WIZMODECMD | AUTOCOMPLETE },\n'
-            '    { \'\\0\', "sramtour", "visit 48 depths", nh_sram_tour, WIZMODECMD | AUTOCOMPLETE },\n'
             '    { \'\\0\', "srampack", "carry 150 test objects", nh_sram_pack, WIZMODECMD | AUTOCOMPLETE },\n'
-            '    { \'\\0\', "sramstack", "travel stack probes", nh_sram_stack, WIZMODECMD | AUTOCOMPLETE },\n'
+            '    { \'\\0\', "sramamulet", "carry the real Amulet of Yendor", nh_sram_amulet, WIZMODECMD | AUTOCOMPLETE },\n'
             '    { \'\\0\', "stats",')
     p = src / 'src/cmd.c'; p.write_text(p.read_text() + (port / 'sram-commands.c').read_text())
-    p = src / 'compat.h'; p.write_text(p.read_text() + '\nvoid nh_mem_phase(const char *);\nint nh_sram_trial(void);\nint nh_sram_stack(void);\nint nh_sram_pack(void);\nint nh_sram_tour(void);\nint nh_sram_world(void);\nint nh_sram_revisit(void);\nint nh_sram_planes(void);\nint nh_sram_nextplane(void);\nint nh_sram_altar(void);\n')
+    p = src / 'compat.h'; p.write_text(p.read_text() + '\nvoid nh_mem_phase(const char *);\nint nh_sram_trial(void);\nint nh_sram_amulet(void);\nint nh_sram_pack(void);\nint nh_sram_world(void);\nint nh_sram_revisit(void);\nint nh_sram_altar(void);\nint nh_sram_portal(void);\n')
     p = src / 'CMakeLists.txt'; s = p.read_text().replace('set(_game_env TERM=xterm HOME=/)', 'set(_game_env TERM=xterm HOME=/ USER=wizard LOGNAME=wizard)')
-    p.write_text(s + '\ntarget_compile_definitions(nethack PRIVATE RP2040_CONSOLE_CLOCK_NO_PROMPT=1)\ntarget_compile_options(nethack PRIVATE -fstack-usage)\n')
+    p.write_text(s + '\ntarget_compile_definitions(nethack PRIVATE RP2040_CONSOLE_CLOCK_NO_PROMPT=1 NH_RESERVE_TRACE=1)\ntarget_compile_options(nethack PRIVATE -fstack-usage)\n')
     shutil.copy(port / 'sram-diagnostics.c', src / 'memlog.c')

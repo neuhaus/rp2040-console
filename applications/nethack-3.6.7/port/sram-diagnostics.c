@@ -26,6 +26,7 @@
 #include <fcntl.h>
 #include <malloc.h>
 #include <sys/reent.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -37,6 +38,7 @@ extern char __HeapLimit; /* top of the heap, bottom of the stack reserve */
 extern char __StackTop;  /* top of SRAM; the stack grows down from here */
 extern char end;         /* bottom of the heap (end of .bss) */
 extern void *_sbrk(int);
+extern bool storage_free_bytes(uint64_t *bytes);
 
 #define NH_PAINT 0xA5  /* must not be a value the stack commonly writes */
 #define NH_MARGIN 512  /* leave the frames live at paint time untouched */
@@ -189,13 +191,15 @@ void nh_mem_phase(const char *phase) {
         node = node->next;
     }
     nh_mem_sample();
+    uint64_t volfree = 0;
+    (void) storage_free_bytes(&volfree);
     unsigned guard = 1;
     if (paint_lo && paint_hi > paint_lo + 1024)
         for (unsigned i = 0; i < 1024; ++i)
             if (paint_lo[i] != NH_PAINT) { guard = 0; break; }
-    printf("\nMEASURE %s live=%lu peak=%lu arena=%lu free=%lu largest=%lu growth=%lu stack=%lu failed=%lu allocs=%lu peakreq=%lu peakcall=%lx guard=%u\n",
+    printf("\nMEASURE %s live=%lu peak=%lu arena=%lu free=%lu largest=%lu growth=%lu stack=%lu failed=%lu allocs=%lu peakreq=%lu peakcall=%lx guard=%u volfree=%lu\n",
            phase, (unsigned long)mi.uordblks, (unsigned long)nh_peak_live,
            (unsigned long)mi.arena, (unsigned long)mi.fordblks,
            (unsigned long)(largest > 8 ? largest - 8 : 0), nh_heap_free(),
-           stack_peak, (unsigned long)nh_failed_request, nh_allocations, (unsigned long)nh_peak_request, (unsigned long)nh_peak_caller, guard);
+           stack_peak, (unsigned long)nh_failed_request, nh_allocations, (unsigned long)nh_peak_request, (unsigned long)nh_peak_caller, guard, (unsigned long)volfree);
 }

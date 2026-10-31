@@ -99,7 +99,22 @@
  E boolean FDECL(cursed_object_at, (int, int));
  E nhsym FDECL(get_othersym, (int, int));
  
-@@ -1792,7 +1792,7 @@
+@@ -852,6 +852,14 @@
+ E boolean FDECL(read_tribute, (const char *, const char *, int,
+                                char *, int, unsigned));
+ E boolean FDECL(Death_quote, (char *, int));
++
++/* ### reserve.c ### */
++
++/* Room kept free for the next level or checkpoint; a mapped level is a few
++ * KiB, the checkpoint companion about 20 KiB. */
++#define NH_FLASH_RESERVE (48L * 1024L)
++E long NDECL(nh_flash_free);
++E long FDECL(nh_reserve_flash, (d_level *));
+ 
+ /* ### fountain.c ### */
+ 
+@@ -1792,7 +1800,7 @@
  E int FDECL(load_symset, (const char *, int));
  E void NDECL(free_symsets);
  E boolean FDECL(parsesymbols, (char *, int));
@@ -818,7 +833,30 @@
      getreturn("to exit");
 --- a/src/files.c
 +++ b/src/files.c
-@@ -926,52 +926,9 @@
+@@ -509,6 +509,8 @@
+ 
+     if (errbuf)
+         *errbuf = '\0';
++    if (lev)
++        (void) nh_reserve_flash((d_level *) 0);
+     set_levelfile_name(lock, lev);
+     fq_lock = fqname(lock, LEVELPREFIX, 0);
+ 
+@@ -806,6 +808,13 @@
+ 
+     if (errbuf)
+         *errbuf = '\0';
++    /* Bones never take the space a checkpoint or level file needs. */
++    if (nh_reserve_flash(lev) < NH_FLASH_RESERVE) {
++        *bonesid = set_bonesfile_name(bones, lev);
++        if (errbuf)
++            Sprintf(errbuf, "No room for bones \"%s\".", bones);
++        return -1;
++    }
+     *bonesid = set_bonesfile_name(bones, lev);
+     file = set_bonestemp_name();
+     file = fqname(file, BONESPREFIX, 0);
+@@ -926,52 +935,9 @@
  set_savefile_name(regularize_it)
  boolean regularize_it;
  {
@@ -852,7 +890,9 @@
 -            "*ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_-.";
 -        const char *legal = okchars;
 -        char fnamebuf[BUFSZ], encodedfnamebuf[BUFSZ];
--
++    nhUse(regularize_it);
++    Strcpy(SAVEF, "save/0game");
+ 
 -        /* Obtain the name of the logged on user and incorporate
 -         * it into the name. */
 -        Sprintf(fnamebuf, "%s", plname);
@@ -868,13 +908,10 @@
 -#endif /* WIN32 */
 -#endif /* MICRO */
 -#endif /* VMS   */
-+    nhUse(regularize_it);
-+    Strcpy(SAVEF, "save/0game");
-+
  }
  
  #ifdef INSURANCE
-@@ -1235,7 +1192,8 @@
+@@ -1235,7 +1201,8 @@
  
                  if (!entry)
                      break;
@@ -884,20 +921,20 @@
                      if (uid == myuid) {
                          char filename[BUFSZ];
                          char *r;
-@@ -3235,6 +3193,12 @@
+@@ -3234,6 +3201,12 @@
+ fopen_sym_file()
  {
      FILE *fp;
- 
++
 +    /* The symbol set is in the data librarian now (compressed); ask the
 +     * librarian for a stdio FILE* over the decompressed stream.  Fall back to
 +     * the filesystem for a build that ships "symbols" as a plain file. */
 +    if ((fp = nhdlb_memopen(SYMBOLS)) != 0)
 +        return fp;
-+
+ 
      fp = fopen_datafile(SYMBOLS, "r",
  #ifdef WIN32
-                             SYSCONFPREFIX
-@@ -3311,7 +3275,7 @@
+@@ -3311,7 +3284,7 @@
  int which_set;
  {
      int val, i;
@@ -1614,6 +1651,86 @@
                              || quest_info(MS_GUARDIAN) == i)
                          /* non-leader/nemesis/guardian role-specific monster
                             */
+--- /dev/null
++++ b/src/reserve.c
+@@ -0,0 +1,77 @@
++/* RP2040 data volume: bones files and score logs yield their space to the
++ * running game. */
++#include "hack.h"
++#include <limits.h>
++#include <stdbool.h>
++#include <stdint.h>
++#include <fcntl.h>
++#include <sys/stat.h>
++
++bool storage_free_bytes(uint64_t *bytes);
++extern char bones[]; /* files.c: name of the last bones file */
++extern int n_dgns;   /* number of dungeons, from dungeon.c */
++
++long nh_flash_free(void)
++{
++    uint64_t bytes;
++
++    if (!storage_free_bytes(&bytes))
++        return -1L;
++    return bytes > (uint64_t) LONG_MAX ? LONG_MAX : (long) bytes;
++}
++
++static boolean short_of_room(long avail)
++{
++    return avail >= 0 && avail < NH_FLASH_RESERVE;
++}
++
++static long reclaimed(const char *name, long before)
++{
++    long after = nh_flash_free();
++
++#ifdef NH_RESERVE_TRACE
++    printf("\nRECLAIM %s free_before=%ld free_after=%ld\n", name, before,
++           after);
++#else
++    nhUse(name);
++    nhUse(before);
++#endif
++    return after;
++}
++
++/* Empty a score log rather than delete it: lock_file() opens the log
++ * before topten() appends to it, and fails if the file is missing. */
++static boolean empty_log(const char *name)
++{
++    const char *path = fqname(name, SCOREPREFIX, 0);
++    struct stat st;
++    int fd;
++
++    if (stat(path, &st) || st.st_size <= 0
++        || (fd = open(path, O_WRONLY | O_TRUNC)) < 0)
++        return FALSE;
++    (void) close(fd);
++    return TRUE;
++}
++
++/* Before a level, checkpoint or bones file is written, delete bones files
++ * and then empty the score logs (which the game never reads) until
++ * NH_FLASH_RESERVE bytes are free. keep, if given, is the level about to get
++ * bones: its bones stay, and so do the logs. Returns the free bytes, or -1
++ * if the volume cannot be queried. */
++long nh_reserve_flash(d_level *keep)
++{
++    long avail = nh_flash_free();
++    d_level lev;
++
++    for (lev.dnum = 0; lev.dnum < n_dgns && short_of_room(avail); ++lev.dnum)
++        for (lev.dlevel = 1; lev.dlevel <= dungeons[lev.dnum].num_dunlevs
++                             && short_of_room(avail); ++lev.dlevel)
++            if (!(keep && on_level(&lev, keep)) && delete_bonesfile(&lev))
++                avail = reclaimed(bones, avail);
++    if (!keep && short_of_room(avail) && empty_log(XLOGFILE))
++        avail = reclaimed(XLOGFILE, avail);
++    if (!keep && short_of_room(avail) && empty_log(LOGFILE))
++        avail = reclaimed(LOGFILE, avail);
++    return avail;
++}
 --- a/src/restore.c
 +++ b/src/restore.c
 @@ -802,12 +802,12 @@
@@ -2060,18 +2177,19 @@
  
      /* we may get here via hangup signal, in which case we want to fix up
         a few of things before saving so that they won't be restored in
-@@ -155,7 +153,9 @@
+@@ -155,7 +153,10 @@
  
      HUP mark_synch(); /* flush any buffered screen output */
  
 -    fd = create_savefile();
 +    /* An incomplete write is never offered as a saved game. The active game
 +     * has consumed its previous companion, so this is a single checkpoint. */
++    (void) nh_reserve_flash((d_level *) 0);
 +    fd = creat(fqname("0game.tmp", SAVEPREFIX, 2), FCMASK);
      if (fd < 0) {
          HUP pline("Cannot open save file.");
          (void) delete_savefile(); /* ab@unido */
-@@ -212,61 +212,22 @@
+@@ -212,61 +213,22 @@
      store_version(fd);
      store_savefileinfo(fd);
      store_plname_in_file(fd);
@@ -2143,7 +2261,7 @@
      delete_levelfile(ledger_no(&u.uz));
      delete_levelfile(0);
      nh_compress(fq_save);
-@@ -776,133 +737,195 @@
+@@ -776,133 +738,195 @@
  }
  
  #ifdef ZEROCOMP
@@ -2153,18 +2271,7 @@
 - * state and level files to form a save file, and it means the flushing
 - * does not need to be specifically called for every other time a level
 - * file is written out.
-+/*
-+ * pico-bare: upstream's zero-run compression is composed with Tamp.  The
-+ * bytes NetHack writes are first run-length encoded - RLESC introduces a run
-+ * of zeros, whose count (one less than the run length) is the next byte - and
-+ * that stream is then Tamp compressed; restore reverses the two.  Everything
-+ * around the codec is upstream's: the "zerocomp" name, the SFI1_ZEROCOMP
-+ * savefile flag, the bufon/bufoff raw-segment protocol and the flush points.
-+ *
-+ * The RLE is not redundant with Tamp: it costs two bytes per zero run and
-+ * cuts 9-20% off the Tamp stream on real levels, because Tamp caps its match
-+ * length, so a long zero run costs it several tokens.
-  */
+- */
 -
 -#define RLESC '\0' /* Leading character for run of LRESC's */
 -#define flushoutrun(ln) (zerocomp_bputc(RLESC), zerocomp_bputc(ln), ln = -1)
@@ -2182,27 +2289,20 @@
 -{
 -    HUP printf("outbufp %d outrunlength %d\n", outbufp,outrunlength);
 -}*/
--
--STATIC_OVL void
--zerocomp_bputc(c)
--int c;
--{
--#ifdef MFLOPPY
--    bytes_counted++;
--    if (count_only)
--        return;
--#endif
--    if (outbufp >= sizeof outbuf) {
--        (void) write(bwritefd, outbuf, sizeof outbuf);
--        outbufp = 0;
--    }
--    outbuf[outbufp++] = (unsigned char) c;
--}
--
--/*ARGSUSED*/
--void STATIC_OVL
++/*
++ * pico-bare: upstream's zero-run compression is composed with Tamp.  The
++ * bytes NetHack writes are first run-length encoded - RLESC introduces a run
++ * of zeros, whose count (one less than the run length) is the next byte - and
++ * that stream is then Tamp compressed; restore reverses the two.  Everything
++ * around the codec is upstream's: the "zerocomp" name, the SFI1_ZEROCOMP
++ * savefile flag, the bufon/bufoff raw-segment protocol and the flush points.
++ *
++ * The RLE is not redundant with Tamp: it costs two bytes per zero run and
++ * cuts 9-20% off the Tamp stream on real levels, because Tamp caps its match
++ * length, so a long zero run costs it several tokens.
++ */
 +#include "compressor.h"
-+
+ 
 +#define RLESC '\0' /* Leading character for run of RLESC's */
 +#define NHTAMP_WIN_BITS 10
 +#define NHTAMP_OUTBUF 512
@@ -2219,18 +2319,31 @@
 +static boolean nhtamp_cstarted;
 +static boolean nhtamp_compressing;
 +
-+STATIC_OVL void
+ STATIC_OVL void
+-zerocomp_bputc(c)
+-int c;
 +nhtamp_cflushout()
-+{
+ {
+-#ifdef MFLOPPY
+-    bytes_counted++;
+-    if (count_only)
+-        return;
+-#endif
+-    if (outbufp >= sizeof outbuf) {
+-        (void) write(bwritefd, outbuf, sizeof outbuf);
+-        outbufp = 0;
 +    if (nhtamp_cout_len) {
 +        unsigned int n = nhtamp_cout_len;
 +
 +        nhtamp_cout_len = 0;
 +        if ((unsigned int) write(nhtamp_cfd, nhtamp_cout, n) != n)
 +            panic("cannot write %u bytes to file #%d", n, nhtamp_cfd);
-+    }
-+}
-+
+     }
+-    outbuf[outbufp++] = (unsigned char) c;
+ }
+ 
+-/*ARGSUSED*/
+-void STATIC_OVL
 +STATIC_OVL void
 +nhtamp_cput(buf, n)
 +const unsigned char *buf;
@@ -2312,17 +2425,15 @@
  {
 -    compressing = TRUE;
 -    return;
--}
--
--/*ARGSUSED*/
 +    nhtamp_cfd = fd;
 +    nhtamp_compressing = TRUE;
 +    nhtamp_cstarted = FALSE;
 +    nhtamp_cout_len = 0;
 +    nhtamp_stage_len = 0;
 +    nhtamp_outrun = -1;
-+}
-+
+ }
+ 
+-/*ARGSUSED*/
  STATIC_OVL void
  zerocomp_bufoff(fd)
  int fd;
@@ -2334,17 +2445,16 @@
 -    outrunlength = -1;
 -    compressing = FALSE;
 -    return;
--}
--
--/* flush run and buffer */
 +    (void) fd;
 +    nhtamp_compressing = FALSE;
-+}
-+
+ }
+ 
+-/* flush run and buffer */
  STATIC_OVL void
  zerocomp_bflush(fd)
 -register int fd;
--{
++int fd;
+ {
 -    bwritefd = fd;
 -    if (outrunlength >= 0) { /* flush run */
 -        flushoutrun(outrunlength);
@@ -2353,7 +2463,10 @@
 -    if (count_only)
 -        outbufp = 0;
 -#endif
--
++    if (nhtamp_compressing && nhtamp_cstarted) {
++        unsigned char out[64];
++        size_t written = 0;
+ 
 -    if (outbufp) {
 -        if (write(fd, outbuf, outbufp) != outbufp) {
 -#if defined(UNIX) || defined(VMS) || defined(__EMX__)
@@ -2362,56 +2475,29 @@
 -            else
 -#endif
 -                zerocomp_bclose(fd); /* panic (outbufp != 0) */
-+int fd;
-+{
-+    if (nhtamp_compressing && nhtamp_cstarted) {
-+        unsigned char out[64];
-+        size_t written = 0;
-+
+-        }
+-        outbufp = 0;
 +        nhtamp_endrun();
 +        nhtamp_stage_flush();
 +        (void) tamp_compressor_flush(&nhtamp_comp, out, sizeof out, &written,
 +                                     TRUE);
 +        if (written)
 +            nhtamp_cput(out, written);
-+    }
+     }
 +    nhtamp_cflushout();
-+}
-+
-+STATIC_OVL void
-+zerocomp_bwrite(fd, loc, num)
-+int fd;
-+genericptr_t loc;
+ }
+ 
+ STATIC_OVL void
+ zerocomp_bwrite(fd, loc, num)
+ int fd;
+ genericptr_t loc;
+-register unsigned num;
 +unsigned int num;
-+{
+ {
+-    register unsigned char *bp = (unsigned char *) loc;
 +    if (nhtamp_compressing) {
 +        const unsigned char *bp = (const unsigned char *) loc;
-+
-+        if (!nhtamp_cstarted) {
-+            TampConf conf;
-+
-+            memset((genericptr_t) &conf, 0, sizeof conf);
-+            conf.window = NHTAMP_WIN_BITS;
-+            conf.literal = 8;
-+            conf.extended = 1;
-+            if (tamp_compressor_init(&nhtamp_comp, &conf, nhtamp_cwin)
-+                != TAMP_OK)
-+                panic("tamp: compressor init failed");
-+            nhtamp_cfd = fd;
-+            nhtamp_cstarted = TRUE;
-         }
--        outbufp = 0;
--    }
--}
--
--STATIC_OVL void
--zerocomp_bwrite(fd, loc, num)
--int fd;
--genericptr_t loc;
--register unsigned num;
--{
--    register unsigned char *bp = (unsigned char *) loc;
--
+ 
 -    if (!compressing) {
 -#ifdef MFLOPPY
 -        bytes_counted += num;
@@ -2425,18 +2511,22 @@
 -            else
 -#endif
 -                panic("cannot write %u bytes to file #%d", num, fd);
-+        for (; num; num--, bp++) {
-+            if (*bp == (unsigned char) RLESC) { /* one more byte in run */
-+                if (++nhtamp_outrun == 0xFF)
-+                    nhtamp_endrun();
-+            } else { /* end of run */
-+                nhtamp_endrun();
-+                nhtamp_emit(*bp);
-+            }
++        if (!nhtamp_cstarted) {
++            TampConf conf;
++
++            memset((genericptr_t) &conf, 0, sizeof conf);
++            conf.window = NHTAMP_WIN_BITS;
++            conf.literal = 8;
++            conf.extended = 1;
++            if (tamp_compressor_init(&nhtamp_comp, &conf, nhtamp_cwin)
++                != TAMP_OK)
++                panic("tamp: compressor init failed");
++            nhtamp_cfd = fd;
++            nhtamp_cstarted = TRUE;
          }
-     } else {
+-    } else {
 -        bwritefd = fd;
--        for (; num; num--, bp++) {
+         for (; num; num--, bp++) {
 -            if (*bp == RLESC) { /* One more char in run */
 -                if (++outrunlength == 0xFF) {
 -                    flushoutrun(outrunlength);
@@ -2446,14 +2536,21 @@
 -                    flushoutrun(outrunlength);
 -                }
 -                zerocomp_bputc(*bp);
--            }
--        }
++            if (*bp == (unsigned char) RLESC) { /* one more byte in run */
++                if (++nhtamp_outrun == 0xFF)
++                    nhtamp_endrun();
++            } else { /* end of run */
++                nhtamp_endrun();
++                nhtamp_emit(*bp);
+             }
+         }
++    } else {
 +        if ((unsigned int) write(fd, loc, num) != num)
 +            panic("cannot write %u bytes to file #%d", num, fd);
      }
  }
  
-@@ -910,11 +933,24 @@
+@@ -910,12 +934,25 @@
  zerocomp_bclose(fd)
  int fd;
  {
@@ -2476,17 +2573,17 @@
 -    return;
  }
  #endif /* ZEROCOMP */
-+
  
++
  STATIC_OVL void
  savelevchn(fd, mode)
-@@ -995,10 +1031,16 @@
+ register int fd, mode;
+@@ -995,10 +1032,16 @@
  struct obj *otmp;
  {
      int buflen, zerobuf = 0;
--
 +    struct obj disk = *otmp;
-+
+ 
 +    /* Restore reconstructs links; only contents/extra presence is needed.
 +     * Canonical values compress better than allocator-specific addresses. */
 +    disk.nobj = disk.nexthere = (struct obj *) 0;
@@ -2499,7 +2596,7 @@
      if (otmp->oextra) {
          buflen = ONAME(otmp) ? (int) strlen(ONAME(otmp)) + 1 : 0;
          bwrite(fd, (genericptr_t) &buflen, sizeof buflen);
-@@ -1082,12 +1124,19 @@
+@@ -1082,12 +1125,19 @@
  struct monst *mtmp;
  {
      int buflen;
@@ -3081,7 +3178,7 @@
          if (pid) {
 --- a/sys/unix/unixunix.c
 +++ b/sys/unix/unixunix.c
-@@ -91,126 +91,26 @@
+@@ -91,126 +91,27 @@
      return 1;     /* success! */
  }
  
@@ -3128,6 +3225,7 @@
 +    else
 +        (void) eraseoldlocks();
 +    (void) unlink(fqname("0game.tmp", SAVEPREFIX, 2));
++    (void) unlink(fqname("0game.bn", BONESPREFIX, 0)); /* unfinished bones */
      set_levelfile_name(lock, 0);
 -
 -    if (locknum) {

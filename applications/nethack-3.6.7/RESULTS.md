@@ -1,4 +1,158 @@
-# Hardware validation — 16 October 2026
+# Score-log cleanup — 31 October 2026 (hardware run incomplete)
+
+Bones files are now deleted level by level, and when that is not enough
+`xlogfile` and then `logfile` are emptied (see INTERNALS.md). Release firmware
+1,546,636 B, diagnostic firmware 1,548,268 B (20 B below the volume).
+
+- A first run with the logs **deleted** passed the bones, world, deep, restore,
+  ordinary and endgame stages: all seven bones files, then `xlogfile` (3,584 B)
+  and `logfile` (1,024 B), went only below 48 KiB free, and the full-dungeon
+  checkpoint had 11,776 B free. Resumed from the endgame stage, the ordinary
+  firmware climbed into the Planes and **ascended**. The score check then found
+  that a deleted log is never recreated: with `fcntl` locking, `lock_file()`
+  opens the log first and gives up ("Cannot open file logfile"). The logs are
+  now emptied instead of deleted.
+- The first run of that fix stopped in the world stage at Gnomish Mines level 8
+  because the host computer went to sleep and dropped the USB connection (not
+  a board fault: heap and stack were normal and no panic was printed). It is
+  being rerun with the host kept awake.
+- The harness now answers the wizard-mode "Die?" with `n` except while it plants
+  bones; a level-1 hero died on arrival on the Plane of Air otherwise.
+
+# Hardware validation — 30 October 2026
+
+**On a volume that already held seven bones files, the maximum-branch dungeon
+was filled, saved and restored. The ordinary release firmware then climbed out
+of level 1 with the Amulet into the Planes and ascended.** All 94 checks of
+`tests/ascension.py` passed, and every FAT image passed `fsck.fat -n`. Bones
+files were deleted only as free space fell below the 48 KiB reserve. Without
+that, the fully mapped dungeon would not have fitted on the volume.
+
+This is still a wizard-driven storage and memory test, not a naturally played
+game. What is new compared with 16 October:
+
+- the level-1 climb, a normal checkpoint restore of the full dungeon with real
+  stair travel, and the final `#offer` all ran on the **ordinary** firmware;
+- the planes were left through their magic portals by the ordinary trap code
+  (`domagicportal()`), not by direct level changes;
+- the volume carried bones files and the score logs of earlier games.
+
+## Builds
+
+Pico SDK 2.3.1, Arm GNU Toolchain 15.3.Rel2, QEMU-generated data.
+
+| Build | Firmware | Static SRAM | Heap budget | Stack reserve |
+|---|---:|---:|---:|---:|
+| Ordinary release | 1,546,620 B | 133,520 B | 116,336 B | 20,480 B |
+| Maximum-branch diagnostic | 1,548,116 B | 133,544 B | 116,312 B | 20,480 B |
+
+The bones reserve adds about 200 bytes to the ordinary firmware. The flash
+layout, save format and data volume are unchanged: both images build the same
+`nhdata`, so one volume moves between them. The application regression suite
+(`tests/test.py`) passes; its checkpoint test now also checks that startup
+removes an unfinished bones file.
+
+## Bones and the full dungeon
+
+Ten wizard characters died on levels 3–12 of the Dungeons of Doom. Seven left
+bones files (levels 3–7, the Oracle and the big room; 12,084 B in all). The
+other three levels allow none. A new fixed-seed game carried a bag of 150 rings,
+visited all 76 non-endgame levels of the maximum-branch roster (75 cached),
+revisited and mapped them, and declined all seven "Get bones?" prompts, so
+the files stayed on flash.
+
+| Measure | Result |
+|---|---:|
+| bones files deleted (oldest first) | 7 of 7, 12,084 B |
+| free space when each was deleted | 41,472–48,640 B |
+| free after the mapped revisit | 26,112 B |
+| free after the deep checkpoint | **6,656 B** |
+| companion / cached levels | 12,127 B / 75 files, 187,956 B |
+| free without the deletions | about −5.4 KB: the dungeon would not fit |
+| restore (#stats) | 200 objects, 3 monsters, 76 overviews, 153 contained: identical |
+
+The free space at the checkpoint is lower than the 11,264 B of 16 October.
+Most of the difference is the 4,262 B of `logfile` and `xlogfile` left by the
+seven earlier deaths (see Limits).
+
+## Ordinary firmware
+
+The full-dungeon checkpoint was restored on the release firmware. Wizard mode
+is refused there ("Only user wizard may access debug (wizard) mode"), so the
+game continues in explore mode. Travel (`_` with `<`/`>`) plus the ordinary
+staircase commands went from level 2 down to cached level 3, then up to 2 and
+1. On level 1, `<` without the Amulet asked "Beware, there will be no return!"
+and was declined. The game was saved again, with 7,168 B free.
+
+After `#sramamulet` on the diagnostic firmware, the ordinary firmware restored
+the hero on the level-1 up staircase and climbed with the real Amulet into
+Earth. Entering the Planes deleted the 75 cached levels (216,064 B free).
+
+## Planes and ascension
+
+Earth, Air, Fire and Water were each saved, imaged, restored on the diagnostic
+firmware and compared, then left through their magic portals (`#sramportal`):
+
+| Plane | Objects | Monsters | Contained | Overviews | Free after save |
+|---|---:|---:|---:|---:|---:|
+| Earth | 209 | 63 | 151 | 77 | 216,064 B |
+| Air | 174 | 52 | 151 | 78 | 213,504 B |
+| Fire | 216 | 63 | 151 | 79 | 210,944 B |
+| Water | 169 | 61 | 151 | 80 | 207,872 B |
+| Astral (on the altar) | 526 | 83 | 153 | 81 | 202,240 B |
+
+On Astral, `#sramaltar` placed the hero on the high altar to Thoth (neutral),
+and the game was saved (15,075 B companion). The **ordinary firmware**
+restored it and `#offer`ed the Amulet: "You ascend to the status of
+Demigod...". Afterwards the volume held no checkpoint and no level files, and
+had 226,304 B free.
+
+## Memory (diagnostic firmware, every sample)
+
+| Measure | Result | Budget |
+|---|---:|---:|
+| peak allocated heap | 104,440 B | 116,312 B |
+| least arena growth left | 11,784 B | — |
+| peak stack | 16,132 B | 20,480 B |
+| failed allocations | 0 | — |
+| stack guard | intact in every sample | — |
+
+## Score files
+
+A normal game that is quit adds 70 B to `record` (capped at 100 entries),
+70 B to `logfile` and 303 B to `xlogfile`. A death adds about 610 B to the two
+logs. As of 31 October the reserve empties `xlogfile` and `logfile` when bones
+files alone do not free enough space; `record` is kept.
+
+## Faults found while building the test
+
+- **Torn `.clock` update (harness).** The script once sent a key while the
+  board waited at "Press any key". `_exit()` then rewrote `.clock` while the
+  script forced a USB reboot. FAT copy 1 kept the new cluster, while FAT copy 2
+  and the directory entry did not. The checkpoint was reloaded from the clean
+  image and the stage was repeated. The harness now never sends keys at that
+  prompt. A power cut at the same moment would do the same, as documented.
+- **Imitation Amulet.** Wizard-mode wishes for "Amulet of Yendor" may grant
+  the cheap plastic imitation, because `rnd_otyp_by_namedesc()` matches both
+  objects by description. That is upstream behaviour. The climb then escaped
+  the dungeon, as it should without the Amulet (`u.uhave.amulet=0` on the
+  branch staircase). The test uses `#sramamulet` instead.
+
+Raw serial logs, `results.json` and every FAT image are in
+`build/nethack-ascension/`; the two incidents' logs are in its `incident-*`
+folders.
+
+## Limits
+
+- **Score logs grew without limit** (about 370–610 B per finished game) and
+  would have used up this margin after roughly 18–30 games; fixed on
+  31 October by emptying them under the reserve.
+- The volume can still fill: the reserve frees bones files and the score logs
+  only. A full volume ends the game in a panic.
+- Wizard travel, one fixed seed, one role. Natural combat and arbitrary object
+  hoards remain outside this validation.
+
+# Earlier validation — 16 October 2026
 
 **The RP2040 completed the maximum-branch wizard stress scenario through all
 81 playable levels, saved and restored on every endgame plane, offered the

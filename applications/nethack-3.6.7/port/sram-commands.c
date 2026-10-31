@@ -12,19 +12,14 @@ int nh_sram_trial(void) {
     return 0;
 }
 
-int nh_sram_stack(void) {
-    int x, y, probes = 0;
-    wiz_map();
-    nh_mem_phase("stack_before_travel");
-    for (x = 1; x < COLNO && probes < 16; ++x)
-        for (y = 0; y < ROWNO && probes < 16; ++y)
-            if (ACCESSIBLE(levl[x][y].typ)
-                && distmin(u.ux, u.uy, x, y) > 2) {
-                (void)is_valid_travelpt(x,y);
-                ++probes;
-            }
-    printf("\nSTACK_PROBES %d\n",probes);
-    nh_mem_phase("stack_after_travel");
+/* A wish for "Amulet of Yendor" may grant the imitation, which shares its
+ * description; carry the real one, as the hero would after the Sanctum. */
+int nh_sram_amulet(void) {
+    struct obj *amulet = 0;
+    if (!u.uhave.amulet)
+        amulet = addinv(mksobj(AMULET_OF_YENDOR, TRUE, FALSE));
+    printf("\nAMULET carried=%d letter=%c\n", u.uhave.amulet,
+           amulet ? amulet->invlet : '?');
     return 0;
 }
 
@@ -36,23 +31,6 @@ int nh_sram_pack(void) {
         (void) add_to_container(bag, mksobj(RIN_PROTECTION, TRUE, FALSE));
     bag->owt = weight(bag);
     nh_mem_phase("pack_150_objects");
-    return 0;
-}
-
-int nh_sram_tour(void) {
-    d_level target;
-    int i, hell;
-    for (hell = 0; hell < MAXDUNGEON; ++hell)
-        if (!strcmp(dungeons[hell].dname, "Gehennom")) break;
-    if (hell == MAXDUNGEON) { impossible("No Gehennom"); return 0; }
-    for (i = 1; i <= 48; ++i) {
-        target.dnum = i < dungeons[hell].depth_start ? 0 : hell;
-        target.dlevel = i - dungeons[target.dnum].depth_start + 1;
-        printf("\nTOUR_DEPTH %d\n", i);
-        goto_level(&target, FALSE, FALSE, FALSE);
-    }
-    nh_sram_trial();
-    nh_mem_phase("tour_done");
     return 0;
 }
 
@@ -104,28 +82,19 @@ static int nh_sram_world_run(boolean revisit) {
 int nh_sram_world(void) { return nh_sram_world_run(FALSE); }
 int nh_sram_revisit(void) { return nh_sram_world_run(TRUE); }
 
-int nh_sram_nextplane(void) {
-    d_level target;
-    if (Is_astralevel(&u.uz)) return 0;
-    if (!u.uhave.amulet) (void)addinv(mksobj(AMULET_OF_YENDOR, TRUE, FALSE));
-    if (!u.uhave.amulet) panic("plane trial missing Amulet");
-    target.dnum = earth_level.dnum;
-    target.dlevel = In_endgame(&u.uz) ? u.uz.dlevel - 1 : earth_level.dlevel;
-    printf("\nPLANES_VISIT level=%d ledger=%d\n", target.dlevel, ledger_no(&target));
-    goto_level(&target, FALSE, FALSE, FALSE);
-    if (!on_level(&target, &u.uz)) panic("plane tour transition refused");
-    nh_mem_phase("plane_done");
-    return 0;
-}
-
-int nh_sram_planes(void) {
-    int n = 0;
-    do {
-        nh_sram_nextplane();
-        if (++n > 5) panic("plane tour did not reach Astral");
-    } while (!Is_astralevel(&u.uz));
-    nh_mem_phase("planes_done");
-    return 0;
+/* Step onto this level's magic portal and let dotrap() take it, so the
+ * transition uses domagicportal() and deferred_goto() as in play. */
+int nh_sram_portal(void) {
+    struct trap *t;
+    for (t = ftrap; t; t = t->ntrap)
+        if (t->ttyp == MAGIC_PORTAL) break;
+    if (!t) { pline("No magic portal on this level."); return 0; }
+    printf("\nPORTAL_TAKE from=%d,%d x=%d y=%d\n", u.uz.dnum, u.uz.dlevel,
+           t->tx, t->ty);
+    u_on_newpos(t->tx, t->ty);
+    dotrap(t, 0);
+    nh_mem_phase("portal_taken");
+    return 1;
 }
 
 int nh_sram_altar(void) {
