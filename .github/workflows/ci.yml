@@ -83,51 +83,36 @@ jobs:
       - name: Build hello recipe
         run: sh applications/hello/build.sh
 
-  toolchain-preview:
-    name: Preview toolchain (Ubuntu 26.10)
-    # Informational: a newer toolchain than the pinned one. Allowed to fail so
-    # an upstream regression never blocks. A container is used rather than the
-    # official Arm toolchain so that newlib's build configuration matches the
-    # pinned jobs; the official toolchain enables newlib multibyte/locale
-    # support and adds tens of KB of firmware, which would confound the
-    # comparison. Runs on main only, to keep pull requests fast.
+  picolibc-probe:
+    name: Picolibc compatibility probe
+    # Tracks how far a picolibc port is from building. picolibc is the
+    # arm-none-eabi C library in current distributions (Ubuntu 26.10, Debian
+    # sid) and dropped newlib's reentrant API that the soft-reboot session
+    # core uses, so this compile is expected to fail; a success is the
+    # milestone signal. Informational only, and main only, so it never gates
+    # a pull request. See PICOLIBC.md.
     if: github.event_name == 'push'
     continue-on-error: true
     runs-on: ubuntu-26.04
     container: ubuntu:26.10
-    env:
-      PICO_SDK_PATH: ${{ github.workspace }}/pico-sdk
     steps:
       - name: Install prerequisites
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            ca-certificates git build-essential cmake ninja-build python3 \
-            gcc-arm-none-eabi libnewlib-arm-none-eabi \
-            libstdc++-arm-none-eabi-newlib \
-            dosfstools mtools libusb-1.0-0-dev pkg-config qemu-user
+            ca-certificates git gcc-arm-none-eabi picolibc-arm-none-eabi
           arm-none-eabi-gcc --version | head -1
       - uses: actions/checkout@v4
-      - name: Cache Pico SDK
-        id: sdk
-        uses: actions/cache@v4
-        with:
-          path: pico-sdk
-          key: pico-sdk-2.3.1-tinyusb
-      - name: Fetch Pico SDK 2.3.1
-        if: steps.sdk.outputs.cache-hit != 'true'
+      - name: Probe the session core against picolibc
+        id: probe
+        continue-on-error: true
+        run: sh tests/picolibc-probe.sh
+      # The probe is expected to fail while the port is unstarted; surface the
+      # opposite outcome, since that is what needs attention.
+      - name: Report probe outcome
         run: |
-          git clone --branch 2.3.1 --depth 1 \
-            https://github.com/raspberrypi/pico-sdk.git pico-sdk
-          git -C pico-sdk submodule update --init --depth 1 lib/tinyusb
-      - name: Soft-reboot lifecycle
-        run: bash tests/soft/run.sh
-      # The build prints the firmware/flash and SRAM lines, so a size change
-      # on the newer toolchain is visible in the log without extra reporting.
-      - name: Build integration fixture and volume
-        run: |
-          cmake -S tests/integration -B build/integration -G Ninja
-          cmake --build build/integration --parallel "$(nproc)"
-          cmake --build build/integration --target volume
-      - name: Build hello recipe
-        run: sh applications/hello/build.sh
+          if [ "${{ steps.probe.outcome }}" = "success" ]; then
+            echo "::warning::picolibc probe: the session core now compiles - the port may be feasible"
+          else
+            echo "picolibc probe: session core does not compile against picolibc (expected; see PICOLIBC.md)"
+          fi

@@ -96,7 +96,8 @@ porting an application.
 [INTERNALS.md](INTERNALS.md) explains startup, console routing, compatibility
 headers, filesystem, memory layout, soft reboot and regression checks.
 Each application records its build and hardware validation status in its own
-documentation.
+documentation. A possible move to picolibc, as distributions retire their
+newlib packages, is scoped in [PICOLIBC.md](PICOLIBC.md).
 
 ## Licence
 
