@@ -377,7 +377,7 @@ int _open(const char *path, int flags, int mode)
     return open(path, flags);
 }
 
-int read(int fd, void *buf, size_t count)
+ssize_t read(int fd, void *buf, size_t count)
 {
     /*
      * stdin: the console.
@@ -401,12 +401,12 @@ int read(int fd, void *buf, size_t count)
         errno = EIO;
         return -1;
     }
-    return (int)br;
+    return (ssize_t)br;
 }
 
-int _read(int fd, void *buf, size_t count) { return read(fd, buf, count); }
+ssize_t _read(int fd, void *buf, size_t count) { return read(fd, buf, count); }
 
-int write(int fd, const void *buf, size_t count)
+ssize_t write(int fd, const void *buf, size_t count)
 {
     /*
      * stdout and stderr are not files, and this is the one place that has to
@@ -422,7 +422,7 @@ int write(int fd, const void *buf, size_t count)
      */
     if (fd == 1 || fd == 2) {
         console_write(buf, count);
-        return (int)count;
+        return (ssize_t)count;
     }
 
     if (fd < 0 || fd >= MAX_OPEN_FILES || !open_files[fd].used) {
@@ -436,10 +436,10 @@ int write(int fd, const void *buf, size_t count)
         errno = EIO;
         return -1;
     }
-    return (int)bw;
+    return (ssize_t)bw;
 }
 
-int _write(int fd, const void *buf, size_t count) { return write(fd, buf, count); }
+ssize_t _write(int fd, const void *buf, size_t count) { return write(fd, buf, count); }
 
 /*
  * Advisory file locking.
@@ -514,7 +514,7 @@ int fcntl(int fd, int cmd, ...)
     }
 }
 
-long lseek(int fd, long offset, int whence)
+off_t lseek(int fd, off_t offset, int whence)
 {
     if (fd < 0 || fd >= MAX_OPEN_FILES || !open_files[fd].used) {
         errno = EBADF;
@@ -548,7 +548,7 @@ long lseek(int fd, long offset, int whence)
         return -1;
     }
 
-    return (long)f_tell(fil);
+    return (off_t)f_tell(fil);
 }
 
 /*
@@ -557,7 +557,7 @@ long lseek(int fd, long offset, int whence)
  * buffer boundary, because newlib refills by seeking: the help text and
  * the rumor file are both well past a single buffer.
  */
-long _lseek(int fd, long offset, int whence) { return lseek(fd, offset, whence); }
+off_t _lseek(int fd, off_t offset, int whence) { return lseek(fd, offset, whence); }
 
 int unlink(const char *path)
 {

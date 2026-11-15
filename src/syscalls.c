@@ -175,7 +175,10 @@ struct passwd *getpwuid(uid_t uid)
     }
     memset(&pw, 0, sizeof(pw));
     pw.pw_name = (char *)name;
+#ifndef __PICOLIBC__
+    /* newlib's struct passwd carries a password field; picolibc's does not. */
     pw.pw_passwd = (char *)"";
+#endif
     pw.pw_dir = getenv("HOME") ? getenv("HOME") : (char *)"/";
     pw.pw_shell = (char *)"";
     return &pw;
