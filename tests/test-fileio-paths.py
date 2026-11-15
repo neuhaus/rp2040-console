@@ -21,9 +21,19 @@ with tempfile.TemporaryDirectory() as name:
                 '-Wno-unused-function', '-ffunction-sections', '-fdata-sections',
                 '-I' + str(work), '-I' + str(root / 'tests/support'),
                 '-I' + str(root / 'include'), '-I' + str(fatfs),
-                str(root / 'tests/fileio-paths.c'),
-                '-Wl,-dead_strip' if sys.platform == 'darwin' else '-Wl,--gc-sections',
-                '-o', str(work / 'paths')]
+                str(root / 'tests/fileio-paths.c')]
+    if sys.platform == 'darwin':
+        # ld64's two-level namespace already hides the host syscall names.
+        command.append('-Wl,-dead_strip')
+    else:
+        # fileio.c defines open/close/stat/access/... at their POSIX names.
+        # Those collide with libc, so the linker exports them and --gc-sections
+        # keeps the unreferenced wrappers, which then reference FatFs and
+        # platform calls this host-only unit test deliberately does not link.
+        # A static link has no dynamic symbol table, so the unused wrappers
+        # are collected again and only getcwd/pathconf stay in the image.
+        command += ['-Wl,--gc-sections', '-static']
+    command += ['-o', str(work / 'paths')]
     subprocess.run(command, check=True)
     subprocess.run([str(work / 'paths')], check=True)
 print('Shared getcwd/fpathconf tests passed')
