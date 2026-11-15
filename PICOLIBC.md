@@ -48,7 +48,10 @@ provides the TLS entry points. One SDK caveat: its weak `_sbrk` lives in
 `newlib_interface.c`, so it is absent in a picolibc build and the heap hook
 must be supplied here (step 1).
 
-## Consequences for the design
+## Consequences if soft reboot is ported
+
+These follow from picolibc's model and matter only if the session layer is
+ever brought over; nothing below is implemented.
 
 - **Session isolation becomes a TLS-block swap**, not a `struct _reent` swap.
   Less state is involved, but the isolation boundary is also narrower: stdio,
@@ -78,9 +81,13 @@ below are done, and the hello recipe already builds and links under picolibc:
 4. **Build the rest.** Verify every recipe that does not need soft reboot
    (`hello` builds and produces both UF2s; the integration fixture's other
    apps) and record the size change.
-5. **Nethack only.** `src/nethack_pool*.{c,h}` still wraps newlib's
-   `_malloc_r`. Nethack 3.6.7 needs `SOFT_REBOOT`, so it stays on newlib; if
-   it ever moves, the pool hook is the remaining piece.
+5. **Nethack only.** `src/nethack_pool*.{c,h}` hooks newlib's `_malloc_r`,
+   and NetHack 3.6.7 always builds with that pooled 64-bit allocator. It does
+   *not* need soft reboot: `NETHACK_SOFT_REBOOT` and 3.1.3's `--soft-reboot`
+   default off, and in the default hardware-reboot build `nethack_pool.c`
+   supplies the `__wrap__*_r` hooks itself. Porting the pool to picolibc is
+   therefore independent of soft reboot, and its hook would target the
+   `__malloc_malloc`/`__malloc_free` primitives described below.
 6. **CI.** Replace the source-level compatibility probe with a build of the
    recipes under the distribution picolibc.
 
@@ -129,10 +136,10 @@ builds it.
 
 ## Risks
 
-- Soft reboot is not available on picolibc, so the applications that need it
-  (the NetHack recipes and Rogue's optional mode) stay on newlib. If newlib
-  packaging disappears entirely, that feature is the remaining work, and the
-  attribution design above is the starting point.
+- Soft reboot is not available on picolibc. It is opt-in and off by default
+  in every recipe (`ROGUE_SOFT_REBOOT`, `NETHACK_SOFT_REBOOT` and 3.1.3's
+  `--soft-reboot` all default off), so nothing in the tree depends on it; only
+  a build that explicitly enables it needs newlib.
 - picolibc is a different C library, so behaviour that newlib happened to
   provide needs checking on hardware: the timezone and locale defaults, the
   behaviour of `stdio` buffering over the console, and `errno` reporting.
