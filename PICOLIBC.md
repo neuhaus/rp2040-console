@@ -167,13 +167,17 @@ builds it.
 
 Firmware size for the same sources (RP2040, Cortex-M0+, `-O3`):
 
-| | newlib 4.5.0 | picolibc 1.8.10 |
-| --- | --- | --- |
-| `hello` | 99064 B | 66316 B |
-| fixture `native_app` | 99048 B | 66284 B |
-| fixture `args_app` | 99040 B | 66268 B |
-| fixture `generated_app` | 104920 B | 71828 B |
+| | newlib 4.5.0 | picolibc 1.8.10 | picolibc 1.8.12 |
+| --- | --- | --- | --- |
+| `hello` | 99064 B | 66316 B | 84484 B |
+| fixture `native_app` | 99048 B | 66284 B | 84460 B |
+| fixture `args_app` | 99040 B | 66268 B | 84460 B |
+| fixture `generated_app` | 104920 B | 71828 B | 90100 B |
 
-About 33 KB, or a third, comes off every image: newlib's locale category
-table, its multibyte conversion code, and its wider printf/scanf. The fixture's
-soft-reboot app has no picolibc figure because it is not built under picolibc.
+Against newlib, picolibc 1.8.12 still comes off better on every image, by
+around 15 KB: newlib carries a locale category table, multibyte conversion
+code and wider printf/scanf that picolibc does not. The gap between the two
+picolibc versions is the libc change between them, of which the 64-bit
+`time_t`/`off_t` widths are the visible part, not the whole (the versions also
+differ in packaging). The fixture's soft-reboot app has no picolibc figure
+because it is not built under picolibc.
