@@ -78,18 +78,34 @@ below are done, and the hello recipe already builds and links under picolibc:
 3. **Reject unsupported combinations.** `SOFT_REBOOT` fails configuration
    when the C library is not newlib, and the integration fixture skips its
    soft-reboot app. *Done.*
-4. **Build the rest.** Verify every recipe that does not need soft reboot
-   (`hello` builds and produces both UF2s; the integration fixture's other
-   apps) and record the size change.
-5. **Nethack only.** `src/nethack_pool*.{c,h}` hooks newlib's `_malloc_r`,
+4. **Build the rest.** *Done for the integration fixture and `hello`.* The
+   first CI run found two real incompatibilities, both fixed: picolibc 1.8.12
+   makes `off_t` 64-bit (so `fileio.c` had to use `off_t`/`ssize_t` rather
+   than `long`/`int`) and its `struct passwd` has no `pw_passwd` member.
+5. **Type widths.** picolibc 1.8.12 also makes `time_t`, `off_t` and
+   `struct stat.st_size` 64-bit, where newlib's are 32-bit. *Decided: accept
+   them.* The project already accommodates a variable native `time_t` ABI -
+   `include/rp2040-console.h` maps an application's `time_t` to
+   `rp2040_time32_t` under `LEGACY_TIME32`, and `time32.c` narrows with
+   overflow checks - so legacy sources keep their 32-bit ABI regardless.
+   Accepting the library's defaults avoids an override that would have to
+   track picolibc's `sys/_types.h`. The firmware is larger for it (about
+   18 KB across the fixture images), but that cost was not isolated from the
+   version and packaging change between 1.8.10 and 1.8.12. If a large
+   application later runs short of flash, pinning `__time_t`/`__off_t` to
+   32-bit is possible: `sys/_types.h` only defines them when
+   `__machine_time_t_defined`/`__machine_off_t_defined` are unset, so a
+   picolibc-only `machine/_types.h` would override both.
+6. **Nethack only.** `src/nethack_pool*.{c,h}` hooks newlib's `_malloc_r`,
    and NetHack 3.6.7 always builds with that pooled 64-bit allocator. It does
    *not* need soft reboot: `NETHACK_SOFT_REBOOT` and 3.1.3's `--soft-reboot`
    default off, and in the default hardware-reboot build `nethack_pool.c`
    supplies the `__wrap__*_r` hooks itself. Porting the pool to picolibc is
    therefore independent of soft reboot, and its hook would target the
    `__malloc_malloc`/`__malloc_free` primitives described below.
-6. **CI.** Replace the source-level compatibility probe with a build of the
-   recipes under the distribution picolibc.
+7. **CI.** *Done.* The source-level compatibility probe was replaced by a
+   build of the recipes under the distribution picolibc, which is what found
+   the two incompatibilities above.
 
 ## Allocator attribution (if soft reboot is ever wanted on picolibc)
 
