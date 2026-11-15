@@ -188,6 +188,13 @@ Physical USB, flash writes and long-game heap/stack peaks need board testing.
 
 ## Optional soft reboot
 
+This needs newlib. It keeps the program's libc state apart from the
+platform's through newlib's reentrancy contexts, which picolibc does not
+have, so a picolibc build cannot enable it and restarts with the hardware
+reboot instead. Configuration fails rather than silently downgrading, and
+[PICOLIBC.md](PICOLIBC.md) records the port and what it would take to bring
+soft reboot over.
+
 Enable it explicitly in the program manifest:
 
 ```cmake

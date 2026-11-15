@@ -71,7 +71,9 @@ while true; do screen /dev/ttyACM0; sleep 1; done
 ```
 
 The optional `SOFT_REBOOT` manifest flag restarts supported single-threaded C
-applications while keeping the USB runtime alive. Its supported profile and
+applications while keeping the USB runtime alive. It needs newlib, so a
+picolibc build restarts with the hardware reboot instead; the choice and its
+consequences are in [PICOLIBC.md](PICOLIBC.md). Its supported profile and
 cleanup behavior are described in [INTERNALS.md](INTERNALS.md#optional-soft-reboot).
 Physical USB continuity still requires validation on a Pico.
 
