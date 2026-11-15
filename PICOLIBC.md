@@ -57,18 +57,19 @@ must be supplied here (step 1).
 
 1. **Heap hook.** `src/heap.c` defines whichever of `sbrk`/`_sbrk` the C
    library calls. *Done.*
-2. **Compile seam.** Introduce a libc-session header with a newlib backend
-   (today's code, behaviour unchanged) and a picolibc backend, selected by the
-   detected library. Extend `tests/picolibc-probe.sh` to compile the backend.
+2. **Separate the libc backend from the core.** `src/soft_reboot.c` is now
+   C-library agnostic and compiles against picolibc; the newlib allocation
+   attribution and ledger moved to `src/soft_reboot_newlib.c`. *Core done;
+   the picolibc backend is next.*
 3. **Session core.** For picolibc, allocate a TLS block of `_tls_size()`,
    `_init_tls()` it, and `_set_tls()` it at the session boundary; state the
    exact set of things a boundary resets.
 4. **Stdio.** Provide the program streams over the platform console using the
    SDK's `FDEV_SETUP_STREAM` pattern, and restore the
    console-cannot-be-closed guarantee.
-5. **Allocator attribution.** Replace the reent-context check with a scope
-   flag around program allocation, keeping the leak reclaim and the pooled
-   allocator behaviour.
+5. **Allocator attribution.** Under picolibc the SDK already wraps `malloc`,
+   so the newlib `--wrap=_malloc_r` mechanism is unavailable; attribution
+   needs a scope flag or a routed allocator instead of the reent context.
 6. **Syscalls, locale, timezone.** `src/fileio.c` entry points and the
    `setlocale`/`tzset` handling.
 7. **Verification.** Port `tests/soft`'s harness (its qemu Linux syscall

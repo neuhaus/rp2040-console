@@ -478,6 +478,7 @@ function(rp2040_console_game)
         set_property(TARGET ${CG_NAME} PROPERTY C_COMPILER_LAUNCHER ${_launcher})
         target_sources(${CG_NAME} PRIVATE
                 "${RP2040_CONSOLE_SRC}/soft_reboot.c"
+                "${RP2040_CONSOLE_SRC}/soft_reboot_newlib.c"
                 "${RP2040_CONSOLE_SRC}/soft_reboot_libc.c"
                 "${RP2040_CONSOLE_SRC}/soft_reboot_platform.c")
         target_compile_definitions(${CG_NAME} PRIVATE RP2040_CONSOLE_SOFT_REBOOT=1)

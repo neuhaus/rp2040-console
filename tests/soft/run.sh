@@ -7,7 +7,7 @@ root=$PWD
 flags=(-mcpu=cortex-m0plus -mthumb -mfloat-abi=soft -fomit-frame-pointer -std=gnu11 -O2 -g -ffunction-sections -fdata-sections -fno-common -I"$root/include" -I"$root/src")
 printf '%s\n' "$root/tests/soft/program.c" > "$work/sources.txt"
 python3 tools/tag-program-state.py --sources "$work/sources.txt" --objcopy arm-none-eabi-objcopy --objdump arm-none-eabi-objdump -- arm-none-eabi-gcc "${flags[@]}" -c "$root/tests/soft/program.c" -o "$work/program.o"
-for source in src/soft_reboot.c src/soft_reboot_libc.c src/heap.c tests/soft/{control,linux}.c; do
+for source in src/soft_reboot.c src/soft_reboot_newlib.c src/soft_reboot_libc.c src/heap.c tests/soft/{control,linux}.c; do
     arm-none-eabi-gcc "${flags[@]}" -c "$source" -o "$work/$(basename "$source").o"
 done
 arm-none-eabi-gcc "${flags[@]}" -c tests/soft/start.S -o "$work/start.o"

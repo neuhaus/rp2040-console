@@ -1,140 +1,19 @@
 /* Single-threaded session boundary. Never call exit/allocators from IRQs or
- * core 1 in this mode. All newlib allocations belong to a reentrancy context,
- * so libc-owned buffers and leaked program objects are reclaimed together. */
+ * core 1 in this mode. This file is C-library agnostic: the libc backend
+ * attributes program allocations so that libc-owned buffers and leaked
+ * program objects are reclaimed together at the boundary. */
 #include <errno.h>
 #include <setjmp.h>
-#include <stdint.h>
-#include <stdlib.h>
 #include "rp2040-soft-reboot.h"
 #include "soft_reboot_internal.h"
 
-struct allocation {
-    void *pointer;
-    struct allocation *next;
-};
-
-static struct allocation *allocations;
 static jmp_buf exit_boundary;
 static int active, exit_status, run_handlers;
 static int cleaning;
-static unsigned allocator_depth;
 static void (*handlers[32])(void);
 static size_t handler_count;
 
-extern void *__real__malloc_r(struct _reent *, size_t);
-extern void *__real__calloc_r(struct _reent *, size_t, size_t);
-extern void *__real__realloc_r(struct _reent *, void *, size_t);
-extern void __real__free_r(struct _reent *, void *);
-
-#ifdef RP2040_NETHACK_POOL64
-#include "nethack_pool.h"
-#define program_malloc nh_pool_malloc
-#define program_calloc nh_pool_calloc
-#define program_realloc nh_pool_realloc
-#define program_free nh_pool_free
-#else
-#define program_malloc __real__malloc_r
-#define program_calloc __real__calloc_r
-#define program_realloc __real__realloc_r
-#define program_free __real__free_r
-#endif
-
-static struct allocation **find(void *pointer)
-{
-    struct allocation **link = &allocations;
-    while (*link && (*link)->pointer != pointer) link = &(*link)->next;
-    return link;
-}
-
-static void forget(void *pointer)
-{
-    if (pointer == NULL) return;
-    struct allocation **link = find(pointer);
-    if (*link) {
-        struct allocation *entry = *link;
-        *link = entry->next;
-        __real__free_r(_GLOBAL_REENT, entry);
-    }
-}
-
-static void *remember(struct _reent *context, void *pointer)
-{
-    if (pointer == NULL || !active || context != &rp2040_program_reent)
-        return pointer;
-    struct allocation *entry = __real__malloc_r(_GLOBAL_REENT, sizeof(*entry));
-    if (entry == NULL) {
-        program_free(context, pointer);
-        _REENT_ERRNO(context) = ENOMEM;
-        return NULL;
-    }
-    entry->pointer = pointer;
-    entry->next = allocations;
-    allocations = entry;
-    return pointer;
-}
-
-void *__wrap__malloc_r(struct _reent *context, size_t size)
-{
-    int outer = allocator_depth++ == 0;
-    void *pointer = program_malloc(context, size);
-    if (outer) pointer = remember(context, pointer);
-    --allocator_depth;
-    return pointer;
-}
-
-void *__wrap__calloc_r(struct _reent *context, size_t count, size_t size)
-{
-    if (size && count > SIZE_MAX / size) { _REENT_ERRNO(context) = ENOMEM; return NULL; }
-    int outer = allocator_depth++ == 0;
-    void *pointer = program_calloc(context, count, size);
-    if (outer) pointer = remember(context, pointer);
-    --allocator_depth;
-    return pointer;
-}
-
-void __wrap__free_r(struct _reent *context, void *pointer)
-{
-    int outer = allocator_depth++ == 0;
-    if (outer) forget(pointer);
-    program_free(context, pointer);
-    --allocator_depth;
-}
-
-void *__wrap__realloc_r(struct _reent *context, void *pointer, size_t size)
-{
-    if (pointer == NULL) return __wrap__malloc_r(context, size);
-    if (size == 0) { __wrap__free_r(context, pointer); return NULL; }
-    int outer = allocator_depth++ == 0;
-    struct allocation **link = outer ? find(pointer) : NULL;
-    struct allocation *reserved = NULL;
-    if (outer && !*link && active && context == &rp2040_program_reent) {
-        reserved = __real__malloc_r(_GLOBAL_REENT, sizeof(*reserved));
-        if (!reserved) { --allocator_depth; _REENT_ERRNO(context) = ENOMEM; return NULL; }
-    }
-    void *result = program_realloc(context, pointer, size);
-    /* Failed realloc leaves the original block and its ownership intact. */
-    if (outer && result) {
-        if (*link) (*link)->pointer = result;
-        else if (reserved) {
-            reserved->pointer = result;
-            reserved->next = allocations;
-            allocations = reserved;
-            reserved = NULL;
-        }
-    }
-    if (reserved) __real__free_r(_GLOBAL_REENT, reserved);
-    --allocator_depth;
-    return result;
-}
-
 int rp2040_soft_active(void) { return active; }
-
-size_t rp2040_soft_live_allocations(void)
-{
-    size_t count = 0;
-    for (struct allocation *entry = allocations; entry; entry = entry->next) ++count;
-    return count;
-}
 
 int rp2040_soft_atexit(void (*handler)(void))
 {
@@ -183,11 +62,6 @@ int rp2040_soft_run(int argc, char **argv)
         rp2040_soft_exit(rp2040_console_game_main(argc, argv));
     }
     active = 0;
-    while (allocations) {
-        struct allocation *entry = allocations;
-        allocations = entry->next;
-        program_free(_GLOBAL_REENT, entry->pointer);
-        __real__free_r(_GLOBAL_REENT, entry);
-    }
+    rp2040_soft_libc_reclaim();
     return exit_status;
 }
