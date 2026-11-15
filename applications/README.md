@@ -32,6 +32,12 @@ The SDK builds picotool when needed. Network access is required for that first
 build. An existing executable can be supplied with `PICOTOOL` for data-volume
 conversion. Application READMEs list additional dependencies.
 
+The tested toolchain is the distribution's `gcc-arm-none-eabi` package. Arm's
+standalone GNU Toolchain builds a firmware image roughly 34 KB larger, because
+its newlib enables multibyte and locale support (`_MB_CAPABLE`) that the
+distribution build omits. Record which toolchain produced any recorded image
+sizes.
+
 Firmware and FAT data are separate UF2 files. Flash both to a standard 2 MB Pico
 using BOOTSEL, entering BOOTSEL again for the second file. Reflashing a data volume
 replaces its saves and scores. Use an 80x24 USB serial terminal. Hardware testing
