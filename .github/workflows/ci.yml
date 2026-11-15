@@ -26,7 +26,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential python3 dosfstools mtools \
-            gcc-arm-none-eabi qemu-user
+            gcc-arm-none-eabi libnewlib-dev libnewlib-arm-none-eabi qemu-user
           arm-none-eabi-gcc --version | head -1
       # Host checks: 32-bit time, output-pointer guards, termios/termcap,
       # memory-layout and volume-tool unit tests. No SDK, no board.
