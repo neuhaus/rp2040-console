@@ -113,25 +113,44 @@ local build from the unpacked package, copy the specs with paths rewritten:
 ROOT=/path/to/unpacked/usr
 sed "s#/usr/lib/picolibc#$ROOT/lib/picolibc#g" \
     "$ROOT/lib/picolibc/arm-none-eabi/picolibc.specs" > /tmp/picolibc-local.specs
-arm-none-eabi-gcc -specs=/tmp/picolibc-local.specs ...
+cmake -S applications/hello -B build/hello-picolibc -G Ninja \
+    -DCMAKE_C_FLAGS="-specs=/tmp/picolibc-local.specs -mcpu=cortex-m0plus -mthumb -mfloat-abi=soft" \
+    -DCMAKE_CXX_FLAGS="-specs=/tmp/picolibc-local.specs -mcpu=cortex-m0plus -mthumb -mfloat-abi=soft" \
+    -DCMAKE_ASM_FLAGS="-specs=/tmp/picolibc-local.specs -mcpu=cortex-m0plus -mthumb -mfloat-abi=soft"
 ```
 
-`tests/picolibc-probe.sh` deliberately compiles with `-nostdinc` and the
-picolibc include directory alone, so the gap it reports is picolibc's and not
-the host toolchain's.
+The CPU flags have to be repeated because setting `CMAKE_*_FLAGS` suppresses
+the toolchain's `CMAKE_*_FLAGS_INIT`, and the `-specs` must be passed through
+the language flags rather than the linker flags, or the specs file is loaded
+twice at link time and fails with "attempt to rename spec". A distribution
+whose default C library is already picolibc needs none of this: the SDK
+reports `C library type is picolibc` on its own, which is how the CI job
+builds it.
 
 ## Risks
 
-- The port rewrites the soft-reboot session layer, which is the reason this
-  project exists. It is a re-design of that layer, not a build-flag switch.
-- Board validation has to be repeated, and the documented "validated with
-  newlib 4.5.0" statements and size records all change.
-- TLS is set up for the calling core only; single-threaded core-0 programs are
-  the supported profile today, so this matches, but it must be stated.
+- Soft reboot is not available on picolibc, so the applications that need it
+  (the NetHack recipes and Rogue's optional mode) stay on newlib. If newlib
+  packaging disappears entirely, that feature is the remaining work, and the
+  attribution design above is the starting point.
+- picolibc is a different C library, so behaviour that newlib happened to
+  provide needs checking on hardware: the timezone and locale defaults, the
+  behaviour of `stdio` buffering over the console, and `errno` reporting.
+- Board validation has to be repeated for a picolibc build, and the
+  documented "validated with newlib 4.5.0" statements and size records all
+  change.
 
-## Expected benefit
+## Measured benefit
 
-- Smaller firmware: picolibc has no locale category table, no multibyte
-  conversion code and a leaner printf/scanf. The magnitude must be measured.
-- A supported distro toolchain without pinning a package set that is being
-  withdrawn, and without the newlib-versus-Arm-package size discrepancy.
+Firmware size for the same sources (RP2040, Cortex-M0+, `-O3`):
+
+| | newlib 4.5.0 | picolibc 1.8.10 |
+| --- | --- | --- |
+| `hello` | 99064 B | 66316 B |
+| fixture `native_app` | 99048 B | 66284 B |
+| fixture `args_app` | 99040 B | 66268 B |
+| fixture `generated_app` | 104920 B | 71828 B |
+
+About 33 KB, or a third, comes off every image: newlib's locale category
+table, its multibyte conversion code, and its wider printf/scanf. The fixture's
+soft-reboot app has no picolibc figure because it is not built under picolibc.
