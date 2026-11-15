@@ -1,7 +1,15 @@
 # Picolibc port
 
-Status: in progress on branch `picolibc-port`. Step 1 of the plan below is
-done. The CI `picolibc-probe` job tracks how far the source is from building.
+Status: in progress on branch `picolibc-port`.
+
+**Scope decision: soft reboot stays newlib-only.** It is the project's only
+consumer of newlib's reentrancy contexts, so rather than rebuild it on
+picolibc, picolibc builds restart the program with the default hardware
+reboot. `rp2040_console_game()` rejects `SOFT_REBOOT` when the C library is
+not newlib. This keeps the feature on the validated 26.04 toolchain, makes the
+port small, and stays reversible: the session layer can be re-implemented on
+picolibc later, on its own schedule, using the design sketched under
+"Allocator attribution" below.
 
 ## Why it is on the table
 
@@ -55,27 +63,46 @@ must be supplied here (step 1).
 
 ## Plan
 
+With soft reboot out of scope for picolibc, the port is small. Steps 1 and 2
+below are done, and the hello recipe already builds and links under picolibc:
+
 1. **Heap hook.** `src/heap.c` defines whichever of `sbrk`/`_sbrk` the C
    library calls. *Done.*
-2. **Separate the libc backend from the core.** `src/soft_reboot.c` is now
+2. **Separate the libc backend from the core.** `src/soft_reboot.c` is
    C-library agnostic and compiles against picolibc; the newlib allocation
-   attribution and ledger moved to `src/soft_reboot_newlib.c`. *Core done;
-   the picolibc backend is next.*
-3. **Session core.** For picolibc, allocate a TLS block of `_tls_size()`,
-   `_init_tls()` it, and `_set_tls()` it at the session boundary; state the
-   exact set of things a boundary resets.
-4. **Stdio.** Provide the program streams over the platform console using the
-   SDK's `FDEV_SETUP_STREAM` pattern, and restore the
-   console-cannot-be-closed guarantee.
-5. **Allocator attribution.** Under picolibc the SDK already wraps `malloc`,
-   so the newlib `--wrap=_malloc_r` mechanism is unavailable; attribution
-   needs a scope flag or a routed allocator instead of the reent context.
-6. **Syscalls, locale, timezone.** `src/fileio.c` entry points and the
-   `setlocale`/`tzset` handling.
-7. **Verification.** Port `tests/soft`'s harness (its qemu Linux syscall
-   bridge is unchanged; only the libc hooks are), build the integration
-   fixture and the hello recipe against picolibc, then repeat board
-   validation and update `MEASUREMENTS.json`.
+   attribution moved to `src/soft_reboot_newlib.c`. *Done, and now only
+   compiled for a newlib build.*
+3. **Reject unsupported combinations.** `SOFT_REBOOT` fails configuration
+   when the C library is not newlib, and the integration fixture skips its
+   soft-reboot app. *Done.*
+4. **Build the rest.** Verify every recipe that does not need soft reboot
+   (`hello` builds and produces both UF2s; the integration fixture's other
+   apps) and record the size change.
+5. **Nethack only.** `src/nethack_pool*.{c,h}` still wraps newlib's
+   `_malloc_r`. Nethack 3.6.7 needs `SOFT_REBOOT`, so it stays on newlib; if
+   it ever moves, the pool hook is the remaining piece.
+6. **CI.** Replace the source-level compatibility probe with a build of the
+   recipes under the distribution picolibc.
+
+## Allocator attribution (if soft reboot is ever wanted on picolibc)
+
+Recorded for later: picolibc has no contexts, and the SDK already wraps
+`malloc`/`calloc`/`realloc`/`free`, so newlib's `--wrap=_malloc_r` has no
+picolibc counterpart. Interception is still possible at picolibc's internal
+primitives, which the SDK does not touch and which every public entry point
+funnels through: `malloc` and `free` reach `__malloc_malloc` / `__malloc_free`,
+`calloc` reaches `malloc`, and `realloc` moves through `malloc`/`free` (its
+in-place path keeps the pointer). `--wrap=__malloc_malloc` and
+`--wrap=__malloc_free` are therefore the analogue of today's `--wrap=_malloc_r`,
+with a session-scoped flag standing in for the reentrancy-context comparison.
+The ledger's realloc handling stays correct as written, because a moving
+realloc records the new pointer through `malloc` and forgets the old one
+through `free`.
+
+The caveat is precision: the newlib rule is "allocated on the program's
+reent"; the picolibc rule would be "allocated while a session is active", and
+those agree only if the platform does not allocate during a session. That
+would need to be an explicit, checked invariant.
 
 ## Local verification
 

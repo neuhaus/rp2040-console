@@ -12,9 +12,12 @@ rp2040_console_game(NAME generated_app SOURCES helper.c probe.c GENERATED "${CMA
     ENV TERM=xterm EMPTY_FILES scores)
 rp2040_console_game(NAME native_app SOURCES native.c probe.c ENV TERM=xterm)
 rp2040_console_game(NAME args_app SOURCES args.c ARGS -x story.z3 ENV TERM=xterm)
-rp2040_console_game(NAME soft_app SOURCES soft.c SOFT_REBOOT ENV TERM=xterm
-    EMPTY_FILES session.txt HEAP_END 0x2003c000 STACK_RESERVE 24576)
+if(PICO_CLIB STREQUAL "newlib")
+    # Soft reboot relies on newlib's reentrancy contexts, so picolibc builds
+    # restart with the hardware reboot and skip this fixture.
+    rp2040_console_game(NAME soft_app SOURCES soft.c SOFT_REBOOT ENV TERM=xterm
+        EMPTY_FILES session.txt HEAP_END 0x2003c000 STACK_RESERVE 24576)
+    target_compile_options(soft_app PRIVATE $<$<COMPILE_LANGUAGE:C>:-UNDEBUG>)
+endif()
 # Regression: warning suppression must not be needed by the platform fixture.
 target_compile_options(generated_app PRIVATE $<$<COMPILE_LANGUAGE:C>:-Werror=implicit-function-declaration> $<$<COMPILE_LANGUAGE:C>:-Werror=int-conversion>)
-
-target_compile_options(soft_app PRIVATE $<$<COMPILE_LANGUAGE:C>:-UNDEBUG>)

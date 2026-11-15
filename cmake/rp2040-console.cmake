@@ -440,6 +440,15 @@ function(rp2040_console_game)
         if(NOT PICO_PLATFORM STREQUAL "rp2040" OR PICO_COPY_TO_RAM)
             message(FATAL_ERROR "SOFT_REBOOT requires RP2040 with XIP (PICO_COPY_TO_RAM=0)")
         endif()
+        # Soft reboot keeps the program's libc state apart from the platform's
+        # through newlib's reentrancy contexts. picolibc has none, and instead
+        # restarts the program with the default hardware reboot. Applications
+        # that need it therefore build against newlib.
+        if(NOT PICO_CLIB STREQUAL "newlib")
+            message(FATAL_ERROR
+                    "SOFT_REBOOT requires newlib; this build uses ${PICO_CLIB}. "
+                    "Drop SOFT_REBOOT to use the hardware reboot, or build with newlib.")
+        endif()
         set(_declared_sources "")
         foreach(src IN LISTS _program_sources)
             get_source_file_property(_language "${src}" LANGUAGE)
