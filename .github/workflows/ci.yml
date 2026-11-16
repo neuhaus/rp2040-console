@@ -87,9 +87,7 @@ jobs:
     name: Picolibc build
     # Ubuntu 26.10 ships picolibc as its arm-none-eabi C library. Soft reboot
     # needs newlib and is not built here; everything else must configure,
-    # build, link and produce its volumes. Informational until the first green
-    # run, then make it required. See PICOLIBC.md.
-    continue-on-error: true
+    # build, link and produce its volumes. See PICOLIBC.md.
     runs-on: ubuntu-26.04
     container: ubuntu:26.10
     env:
